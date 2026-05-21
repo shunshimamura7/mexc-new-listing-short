@@ -6,7 +6,7 @@ export async function GET(req: NextRequest) {
   const symbol = searchParams.get('symbol')
   const start = Number(searchParams.get('start'))
   const end = Number(searchParams.get('end'))
-  const interval = searchParams.get('interval') ?? 'Hour1'
+  const interval = searchParams.get('interval') ?? 'Min60'
 
   if (!symbol || !start || !end) {
     return NextResponse.json({ success: false, error: 'symbol, start, end are required' }, { status: 400 })

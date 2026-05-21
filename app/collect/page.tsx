@@ -15,6 +15,7 @@ export default function CollectPage() {
   const [days, setDays] = useState(30)
   const [loading, setLoading] = useState(false)
   const [results, setResults] = useState<CollectResult[]>([])
+  const [total, setTotal] = useState<number>(0)
   const [stored, setStored] = useState<StoredEntry[]>([])
   const [error, setError] = useState<string | null>(null)
 
@@ -51,6 +52,7 @@ export default function CollectPage() {
       const json = await res.json()
       if (!json.success) throw new Error(json.error)
       setResults(json.results)
+      setTotal(json.total ?? json.results.length)
       await fetchStored()
     } catch (e) {
       setError(String(e))
@@ -103,7 +105,10 @@ export default function CollectPage() {
         {/* 収集結果サマリー */}
         {results.length > 0 && (
           <div className="bg-gray-900 rounded-xl p-6 mb-6 border border-gray-800">
-            <h2 className="text-lg font-semibold mb-4 text-gray-200">収集結果</h2>
+            <h2 className="text-lg font-semibold mb-4 text-gray-200">
+              収集結果
+              <span className="ml-2 text-sm font-normal text-gray-500">対象 {total} 件</span>
+            </h2>
             <div className="flex gap-6 mb-4">
               <div className="text-center">
                 <div className="text-2xl font-bold text-green-400">{done}</div>
@@ -115,7 +120,7 @@ export default function CollectPage() {
               </div>
               <div className="text-center">
                 <div className="text-2xl font-bold text-red-400">{errCount}</div>
-                <div className="text-xs text-gray-500 mt-1">エラー</div>
+                <div className="text-xs text-gray-500 mt-1">APIエラー</div>
               </div>
             </div>
 

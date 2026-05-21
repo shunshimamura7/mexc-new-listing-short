@@ -38,10 +38,13 @@ export default function HomePage() {
             <div className="text-lg font-semibold mb-1">データ収集</div>
             <div className="text-blue-200 text-sm">MEXC APIから新規上場銘柄のKlineデータを取得・保存</div>
           </Link>
-          <div className="bg-gray-800 rounded-xl p-6 opacity-50 cursor-not-allowed">
-            <div className="text-lg font-semibold mb-1 text-gray-400">バックテスト</div>
-            <div className="text-gray-600 text-sm">Phase 2で実装予定</div>
-          </div>
+          <Link
+            href="/backtest"
+            className="bg-purple-700 hover:bg-purple-600 rounded-xl p-6 transition-colors block"
+          >
+            <div className="text-lg font-semibold mb-1">バックテスト</div>
+            <div className="text-purple-200 text-sm">SL/TP・エントリータイミングを最適化</div>
+          </Link>
         </div>
 
         {/* 直近の銘柄 */}

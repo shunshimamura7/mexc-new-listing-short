@@ -1,7 +1,7 @@
 import crypto from 'crypto'
 import type { MexcContract, MexcKlineResponse, MexcTickerItem } from '@/types'
 
-const BASE_URL = 'https://futures.mexc.com/api/v1'
+const BASE_URL = 'https://contract.mexc.com/api/v1'
 
 function buildHeaders(requireAuth = false): HeadersInit {
   if (!requireAuth) return { 'Content-Type': 'application/json' }
@@ -22,7 +22,9 @@ function buildHeaders(requireAuth = false): HeadersInit {
   }
 }
 
-async function get<T>(path: string, params?: Record<string, string | number>, requireAuth = false): Promise<T> {
+type MexcEnvelope<T> = { success: boolean; code?: number; message?: string; data: T }
+
+async function get<T>(path: string, params?: Record<string, string | number>, requireAuth = false): Promise<MexcEnvelope<T>> {
   const url = new URL(`${BASE_URL}${path}`)
   if (params) {
     for (const [k, v] of Object.entries(params)) {
@@ -34,36 +36,43 @@ async function get<T>(path: string, params?: Record<string, string | number>, re
     next: { revalidate: 0 },
   })
   if (!res.ok) {
-    throw new Error(`MEXC API error: ${res.status} ${res.statusText} (${path})`)
+    throw new Error(`MEXC HTTP ${res.status} ${res.statusText} (${path})`)
   }
-  return res.json() as Promise<T>
+  const json = await res.json() as MexcEnvelope<T>
+  if (!json.success) {
+    const err = new Error(`MEXC code=${json.code ?? '?'}: ${json.message ?? 'unknown error'} (${path})`)
+    // code=510 はレート制限。呼び出し側でリトライできるよう識別できるプロパティを付与
+    ;(err as Error & { code?: number }).code = json.code
+    throw err
+  }
+  return json
 }
 
 export async function getContractList(): Promise<MexcContract[]> {
-  const data = await get<{ success: boolean; data: MexcContract[] }>('/contract/list')
-  return data.data
+  const res = await get<MexcContract[]>('/contract/detail')
+  return res.data
 }
 
 export async function getKline(
   symbol: string,
   start: number,
   end: number,
-  interval = 'Hour1'
+  interval = 'Min60'
 ): Promise<MexcKlineResponse['data']> {
-  const data = await get<MexcKlineResponse>(`/contract/kline/${symbol}`, {
+  const res = await get<MexcKlineResponse['data']>(`/contract/kline/${symbol}`, {
     interval,
     start,
     end,
   })
-  return data.data
+  return res.data
 }
 
 export async function getTickers(): Promise<MexcTickerItem[]> {
-  const data = await get<{ success: boolean; data: MexcTickerItem[] }>('/contract/ticker')
-  return data.data
+  const res = await get<MexcTickerItem[]>('/contract/ticker')
+  return res.data
 }
 
 export function recentContracts(contracts: MexcContract[], days: number): MexcContract[] {
   const cutoff = Date.now() - days * 24 * 60 * 60 * 1000
-  return contracts.filter((c) => c.createTime >= cutoff)
+  return contracts.filter((c) => c.state === 0 && c.createTime >= cutoff)
 }
