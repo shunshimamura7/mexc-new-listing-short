@@ -11,9 +11,9 @@ async function blobList(): Promise<string[]> {
 }
 
 async function blobFetch(url: string): Promise<ListingData | null> {
-  const { getDownloadUrl } = await import('@vercel/blob')
-  const dlUrl = await getDownloadUrl(url)
-  const res = await fetch(dlUrl)
+  const res = await fetch(url, {
+    headers: { authorization: `Bearer ${process.env.BLOB_READ_WRITE_TOKEN ?? ''}` },
+  })
   if (!res.ok) return null
   return res.json() as Promise<ListingData>
 }
@@ -136,11 +136,12 @@ export async function saveGridsearchLatest(data: GridsearchLatestData): Promise<
 
 export async function loadGridsearchLatest(): Promise<GridsearchLatestData | null> {
   if (IS_VERCEL) {
-    const { list, getDownloadUrl } = await import('@vercel/blob')
+    const { list } = await import('@vercel/blob')
     const { blobs } = await list({ prefix: 'gridsearch/latest.json' })
     if (blobs.length === 0) return null
-    const dlUrl = await getDownloadUrl(blobs[0].url)
-    const res = await fetch(dlUrl)
+    const res = await fetch(blobs[0].url, {
+      headers: { authorization: `Bearer ${process.env.BLOB_READ_WRITE_TOKEN ?? ''}` },
+    })
     if (!res.ok) return null
     return res.json() as Promise<GridsearchLatestData>
   }
