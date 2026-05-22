@@ -38,6 +38,7 @@ async function blobSave(data: ListingData): Promise<void> {
     access: 'private',
     contentType: 'application/json',
     addRandomSuffix: false,
+    allowOverwrite: true,
   })
 }
 
