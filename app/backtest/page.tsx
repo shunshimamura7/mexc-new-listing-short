@@ -123,6 +123,10 @@ export default function BacktestPage() {
   const [gsSortBy, setGsSortBy]     = useState<'ev' | 'avgPnl' | 'winRate'>('ev')
   const [gsShowAll, setGsShowAll]   = useState(false)
 
+  const [expandedKey, setExpandedKey]       = useState<string | null>(null)
+  const [expandedTrades, setExpandedTrades] = useState<Record<string, TradeResult[]>>({})
+  const [expandedLoading, setExpandedLoading] = useState<string | null>(null)
+
   function handleExcludeStock(v: boolean) {
     setExcludeStock(v)
     if (v) setStockOnly(false)
@@ -148,6 +152,27 @@ export default function BacktestPage() {
       setError(String(e))
     } finally {
       setLoading(false)
+    }
+  }
+
+  async function handleExpand(r: GridSearchResult) {
+    const key = `${r.entryHours}-${r.slPct}-${r.tpPct}`
+    if (expandedKey === key) { setExpandedKey(null); return }
+    if (expandedTrades[key]) { setExpandedKey(key); return }
+    setExpandedLoading(key)
+    try {
+      const res = await fetch('/api/backtest', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ entryHours: r.entryHours, slPct: r.slPct, tpPct: r.tpPct, minPumpPct, minFdvMcRatio, minFR, excludeStock, stockOnly }),
+      })
+      const json = await res.json()
+      if (json.success) {
+        setExpandedTrades((prev) => ({ ...prev, [key]: json.summary.trades }))
+        setExpandedKey(key)
+      }
+    } finally {
+      setExpandedLoading(null)
     }
   }
 
@@ -468,40 +493,81 @@ export default function BacktestPage() {
                     <tbody>
                       {gsDisplayed.map((r, i) => {
                         const isTop10 = i < 10
+                        const key = `${r.entryHours}-${r.slPct}-${r.tpPct}`
+                        const isExpanded = expandedKey === key
+                        const isExpandLoading = expandedLoading === key
+                        const trades = expandedTrades[key] ?? []
                         return (
-                          <tr
-                            key={i}
-                            className={`border-b border-gray-800/50 ${
-                              isTop10
-                                ? 'bg-emerald-950/60 hover:bg-emerald-950/80'
-                                : 'hover:bg-gray-800/30'
-                            }`}
-                          >
-                            <td className={`py-1.5 pr-3 font-mono text-xs ${isTop10 ? 'text-emerald-400 font-bold' : 'text-gray-600'}`}>
-                              {i + 1}
-                            </td>
-                            <td className="py-1.5 pr-3 text-gray-300">
-                              {r.entryHours}h後
-                            </td>
-                            <td className="py-1.5 pr-3 text-right font-mono text-red-400">
-                              {r.slPct}%
-                            </td>
-                            <td className="py-1.5 pr-3 text-right font-mono text-green-400">
-                              {r.tpPct}%
-                            </td>
-                            <td className={`py-1.5 pr-3 text-right font-mono ${r.winRate >= 50 ? 'text-green-400' : 'text-gray-400'}`}>
-                              {r.winRate.toFixed(1)}%
-                            </td>
-                            <td className={`py-1.5 pr-3 text-right font-mono ${r.avgPnl >= 0 ? 'text-green-400' : 'text-red-400'}`}>
-                              {r.avgPnl >= 0 ? '+' : ''}{r.avgPnl.toFixed(2)}%
-                            </td>
-                            <td className={`py-1.5 pr-3 text-right font-mono font-medium ${r.expectedValue >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
-                              {r.expectedValue >= 0 ? '+' : ''}{r.expectedValue.toFixed(2)}%
-                            </td>
-                            <td className="py-1.5 text-right text-gray-500 text-xs">
-                              {r.tradeCount}
-                            </td>
-                          </tr>
+                          <>
+                            <tr
+                              key={key}
+                              onClick={() => handleExpand(r)}
+                              className={`border-b border-gray-800/50 cursor-pointer select-none ${
+                                isTop10
+                                  ? 'bg-emerald-950/60 hover:bg-emerald-950/80'
+                                  : 'hover:bg-gray-800/30'
+                              } ${isExpanded ? 'border-b-0' : ''}`}
+                            >
+                              <td className={`py-1.5 pr-3 font-mono text-xs ${isTop10 ? 'text-emerald-400 font-bold' : 'text-gray-600'}`}>
+                                {i + 1}
+                              </td>
+                              <td className="py-1.5 pr-3 text-gray-300">{r.entryHours}h後</td>
+                              <td className="py-1.5 pr-3 text-right font-mono text-red-400">{r.slPct}%</td>
+                              <td className="py-1.5 pr-3 text-right font-mono text-green-400">{r.tpPct}%</td>
+                              <td className={`py-1.5 pr-3 text-right font-mono ${r.winRate >= 50 ? 'text-green-400' : 'text-gray-400'}`}>
+                                {r.winRate.toFixed(1)}%
+                              </td>
+                              <td className={`py-1.5 pr-3 text-right font-mono ${r.avgPnl >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                                {r.avgPnl >= 0 ? '+' : ''}{r.avgPnl.toFixed(2)}%
+                              </td>
+                              <td className={`py-1.5 pr-3 text-right font-mono font-medium ${r.expectedValue >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                                {r.expectedValue >= 0 ? '+' : ''}{r.expectedValue.toFixed(2)}%
+                              </td>
+                              <td className="py-1.5 text-right text-gray-500 text-xs">
+                                <span className="mr-1">{r.tradeCount}</span>
+                                <span className="text-gray-600">{isExpandLoading ? '…' : isExpanded ? '▲' : '▼'}</span>
+                              </td>
+                            </tr>
+                            {isExpanded && (
+                              <tr key={`${key}-detail`} className="border-b border-gray-700">
+                                <td colSpan={8} className="p-0">
+                                  <div className={`px-4 py-3 ${isTop10 ? 'bg-emerald-950/30' : 'bg-gray-800/30'}`}>
+                                    <div className="text-xs text-gray-500 mb-2 font-medium">
+                                      {r.entryHours}h後 / SL {r.slPct}% / TP {r.tpPct}% — {trades.length} トレード
+                                    </div>
+                                    <div className="overflow-x-auto max-h-48 overflow-y-auto">
+                                      <table className="w-full text-xs">
+                                        <thead className="sticky top-0">
+                                          <tr className={`text-gray-500 border-b border-gray-700 ${isTop10 ? 'bg-emerald-950/30' : 'bg-gray-800/30'}`}>
+                                            <th className="pb-1 pr-4 text-left font-normal">銘柄</th>
+                                            <th className="pb-1 pr-4 text-right font-normal">エントリー</th>
+                                            <th className="pb-1 pr-4 text-right font-normal">決済</th>
+                                            <th className="pb-1 pr-4 text-center font-normal">結果</th>
+                                            <th className="pb-1 text-right font-normal">PnL</th>
+                                          </tr>
+                                        </thead>
+                                        <tbody>
+                                          {(trades as TradeResult[]).map((t, ti) => (
+                                            <tr key={ti} className="border-b border-gray-700/40">
+                                              <td className="py-1 pr-4 font-mono text-gray-300">{t.symbol}</td>
+                                              <td className="py-1 pr-4 text-right font-mono text-gray-400">{t.entryPrice.toFixed(4)}</td>
+                                              <td className="py-1 pr-4 text-right font-mono text-gray-400">{t.exitPrice.toFixed(4)}</td>
+                                              <td className="py-1 pr-4 text-center">
+                                                <span className={`font-medium ${OUTCOME_COLOR[t.outcome]}`}>{OUTCOME_LABEL[t.outcome]}</span>
+                                              </td>
+                                              <td className={`py-1 text-right font-mono font-medium ${t.pnlPct >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                                                {t.pnlPct >= 0 ? '+' : ''}{t.pnlPct.toFixed(2)}%
+                                              </td>
+                                            </tr>
+                                          ))}
+                                        </tbody>
+                                      </table>
+                                    </div>
+                                  </div>
+                                </td>
+                              </tr>
+                            )}
+                          </>
                         )
                       })}
                     </tbody>

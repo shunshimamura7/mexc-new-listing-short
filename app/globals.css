@@ -12,15 +12,39 @@
   --font-mono: var(--font-geist-mono);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
-}
-
 body {
   background: var(--background);
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
+}
+
+/* Light mode overrides — applied when html.light is present */
+html.light .bg-gray-950 { background-color: #ffffff; }
+html.light .bg-gray-900 { background-color: #f3f4f6; }
+html.light .bg-gray-800 { background-color: #e5e7eb; }
+html.light .bg-gray-700 { background-color: #d1d5db; }
+html.light .hover\:bg-gray-800:hover { background-color: #e5e7eb; }
+html.light .hover\:bg-gray-700:hover { background-color: #d1d5db; }
+html.light .hover\:bg-gray-800\/30:hover { background-color: rgba(229, 231, 235, 0.3); }
+
+html.light .text-white   { color: #111827; }
+html.light .text-gray-100 { color: #1f2937; }
+html.light .text-gray-200 { color: #374151; }
+html.light .text-gray-300 { color: #4b5563; }
+html.light .text-gray-400 { color: #6b7280; }
+html.light .text-gray-500 { color: #9ca3af; }
+html.light .text-gray-600 { color: #9ca3af; }
+
+html.light .border-gray-800 { border-color: #e5e7eb; }
+html.light .border-gray-700 { border-color: #d1d5db; }
+
+html.light .disabled\:bg-gray-700:disabled { background-color: #e5e7eb; }
+html.light .disabled\:text-gray-500:disabled { color: #9ca3af; }
+
+/* Input fields in light mode */
+html.light input[type="number"],
+html.light input[type="text"] {
+  background-color: #f9fafb;
+  border-color: #d1d5db;
+  color: #111827;
 }

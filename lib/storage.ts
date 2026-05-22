@@ -10,25 +10,32 @@ async function blobList(): Promise<string[]> {
   return blobs.map((b) => b.pathname.replace('listings/', '').replace('.json', ''))
 }
 
-async function blobLoad(symbol: string): Promise<ListingData | null> {
-  const { list } = await import('@vercel/blob')
-  const { blobs } = await list({ prefix: `listings/${symbol}.json` })
-  if (blobs.length === 0) return null
-  const res = await fetch(blobs[0].url)
+async function blobFetch(url: string): Promise<ListingData | null> {
+  const { getDownloadUrl } = await import('@vercel/blob')
+  const dlUrl = await getDownloadUrl(url)
+  const res = await fetch(dlUrl)
   if (!res.ok) return null
   return res.json() as Promise<ListingData>
 }
 
+async function blobLoad(symbol: string): Promise<ListingData | null> {
+  const { list } = await import('@vercel/blob')
+  const { blobs } = await list({ prefix: `listings/${symbol}.json` })
+  if (blobs.length === 0) return null
+  return blobFetch(blobs[0].url)
+}
+
 async function blobLoadAll(): Promise<ListingData[]> {
-  const symbols = await blobList()
-  const results = await Promise.all(symbols.map(blobLoad))
+  const { list } = await import('@vercel/blob')
+  const { blobs } = await list({ prefix: 'listings/' })
+  const results = await Promise.all(blobs.map((b) => blobFetch(b.url)))
   return results.filter((r): r is ListingData => r !== null)
 }
 
 async function blobSave(data: ListingData): Promise<void> {
   const { put } = await import('@vercel/blob')
   await put(`listings/${data.symbol}.json`, JSON.stringify(data), {
-    access: 'public',
+    access: 'private',
     contentType: 'application/json',
     addRandomSuffix: false,
   })
