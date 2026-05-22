@@ -1,0 +1,68 @@
+name: 新規上場銘柄 自動収集
+
+on:
+  schedule:
+    - cron: '0 */6 * * *'   # 6時間おき (0:00 / 6:00 / 12:00 / 18:00 UTC)
+  workflow_dispatch:          # GitHub UI から手動実行も可能
+
+env:
+  API_BASE: https://mexc-new-listing-short.vercel.app
+
+jobs:
+  collect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: フェーズ1 — 収集対象リスト取得
+        run: |
+          echo "直近7日の新規上場銘柄を確認中..."
+
+          RESPONSE=$(curl -s --retry 3 --retry-delay 5 \
+            -X POST \
+            -H "Content-Type: application/json" \
+            -d '{"days": 7}' \
+            "$API_BASE/api/collect")
+
+          echo "$RESPONSE" | jq -r \
+            '"対象: \(.total) 件 | 新規: \(.toFetch | length) 件 | スキップ: \(.toSkip | length) 件"'
+
+          if [ "$(echo "$RESPONSE" | jq -r '.success')" != "true" ]; then
+            echo "Phase 1 失敗: $(echo "$RESPONSE" | jq -r '.error // "unknown"')"
+            exit 1
+          fi
+
+          echo "$RESPONSE" | jq -c '.toFetch' > /tmp/to_fetch.json
+
+      - name: フェーズ2 — 銘柄ごとにKlineデータ収集
+        run: |
+          COUNT=$(jq length /tmp/to_fetch.json)
+
+          if [ "$COUNT" -eq 0 ]; then
+            echo "新規収集対象なし — 完了"
+            exit 0
+          fi
+
+          echo "$COUNT 銘柄を順次収集します"
+
+          jq -c '.[]' /tmp/to_fetch.json | while IFS= read -r ITEM; do
+            SYMBOL=$(echo "$ITEM"    | jq -r '.symbol')
+            CREATE_TIME=$(echo "$ITEM" | jq -r '.createTime')
+
+            RESULT=$(curl -s --retry 2 --retry-delay 3 --max-time 65 \
+              -X POST \
+              -H "Content-Type: application/json" \
+              -d "{\"symbol\":\"$SYMBOL\",\"createTime\":$CREATE_TIME}" \
+              "$API_BASE/api/collect")
+
+            STATUS=$(echo "$RESULT" | jq -r '.status // "error"')
+            case "$STATUS" in
+              done)  echo "  ✓ $SYMBOL" ;;
+              skip)  echo "  - $SYMBOL (スキップ)" ;;
+              *)     echo "  ✗ $SYMBOL: $(echo "$RESULT" | jq -r '.error // "unknown"')" ;;
+            esac
+
+            sleep 1
+          done
+
+          echo "=== 収集完了 ==="
