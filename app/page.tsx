@@ -43,7 +43,7 @@ export default async function HomePage() {
               </svg>
             </div>
             <div className="font-semibold text-ink mb-1 group-hover:text-red-400 transition-colors">スコアリング</div>
-            <div className="text-ink-faint text-sm leading-relaxed">新規上場銘柄のショート機会を5点満点で自動評価</div>
+            <div className="text-ink-faint text-sm leading-relaxed">24〜48h経過・初動ポンプ50%以上の銘柄をショート機会として自動評価</div>
           </Link>
 
           <Link

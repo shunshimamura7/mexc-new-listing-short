@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback, useRef } from 'react'
-import type { ScoreResult } from '@/types'
+import type { ScoreResult, ElapsedCategory } from '@/types'
 
 const REFRESH_MS = 5 * 60 * 1000
 
@@ -20,44 +20,52 @@ function formatPrice(price: number): string {
 
 function ScoreCard({ result, btcChangeP }: { result: ScoreResult; btcChangeP: number }) {
   const criteria = [
-    { icon: '①', label: '初動ポンプ',   passed: result.detail.initialPump,   value: `+${result.initialPumpPct.toFixed(1)}%` },
-    { icon: '②', label: '出来高枯渇',   passed: result.detail.volumeExhaust, value: `ピーク比 ${(result.volRatio * 100).toFixed(1)}%` },
-    { icon: '③', label: '24h以上経過', passed: result.detail.elapsed24h,    value: `${result.elapsedHours}h経過` },
-    { icon: '④', label: 'FR > +0.05%', passed: result.detail.frHigh,        value: `${result.fundingRate >= 0 ? '+' : ''}${(result.fundingRate * 100).toFixed(4)}%` },
-    { icon: '⑤', label: 'BTC環境',     passed: result.detail.btcBearish,    value: `${btcChangeP >= 0 ? '+' : ''}${btcChangeP.toFixed(2)}%` },
+    { icon: '①', label: '初動ポンプ +50%',  passed: result.detail.initialPump,   value: `+${result.initialPumpPct.toFixed(1)}%` },
+    { icon: '②', label: '出来高枯渇',        passed: result.detail.volumeExhaust, value: `ピーク比 ${(result.volRatio * 100).toFixed(1)}%` },
+    { icon: '③', label: '24h以上経過',       passed: result.detail.elapsed24h,    value: `${result.elapsedHours}h経過` },
+    { icon: '④', label: 'FR > +0.05%',      passed: result.detail.frHigh,        value: `${result.fundingRate >= 0 ? '+' : ''}${(result.fundingRate * 100).toFixed(4)}%` },
+    { icon: '⑤', label: 'BTC環境',          passed: result.detail.btcBearish,    value: `${btcChangeP >= 0 ? '+' : ''}${btcChangeP.toFixed(2)}%` },
   ]
 
   const borderColor =
-    result.recommendation === 'short'   ? 'border-red-500/50' :
+    result.recommendation === 'short'    ? 'border-red-500/50' :
     result.recommendation === 'consider' ? 'border-amber-500/40' :
     'border-rim'
 
   const recBadge =
-    result.recommendation === 'short' ? (
-      <span className="px-2 py-0.5 rounded-full text-xs font-bold bg-red-600 text-white">ショート推奨</span>
-    ) : result.recommendation === 'consider' ? (
-      <span className="px-2 py-0.5 rounded-full text-xs font-bold bg-amber-600 text-white">要検討</span>
-    ) : (
-      <span className="px-2 py-0.5 rounded-full text-xs font-normal bg-panel-raised text-ink-faint">見送り</span>
-    )
+    result.recommendation === 'short'    ? <span className="px-2 py-0.5 rounded-full text-xs font-bold bg-red-600 text-white">ショート推奨</span> :
+    result.recommendation === 'consider' ? <span className="px-2 py-0.5 rounded-full text-xs font-bold bg-amber-600 text-white">要検討</span> :
+    result.recommendation === 'excluded' ? <span className="px-2 py-0.5 rounded-full text-xs font-normal bg-panel-raised text-ink-faint border border-rim">対象外</span> :
+                                           <span className="px-2 py-0.5 rounded-full text-xs font-normal bg-panel-raised text-ink-faint">見送り</span>
+
+  const elapsedBadge =
+    result.elapsedCategory === 'waiting' ? <span className="text-[10px] px-1.5 py-0.5 rounded bg-blue-500/15 text-blue-400 font-medium">待機中</span> :
+    result.elapsedCategory === 'late'    ? <span className="text-[10px] px-1.5 py-0.5 rounded bg-ink-faint/10 text-ink-faint font-medium">48h超</span> :
+    null
+
+  const categoryBadge =
+    result.symbolCategory === 'stock'     ? <span className="text-[10px] px-1.5 py-0.5 rounded bg-purple-500/15 text-purple-400 font-medium">STOCK</span> :
+    result.symbolCategory === 'commodity' ? <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-400 font-medium">商品</span> :
+    null
 
   return (
     <div className={`bg-panel rounded-xl border ${borderColor} p-5 flex flex-col gap-4`}>
       {/* Header */}
       <div className="flex items-start justify-between gap-2">
         <div>
-          <div className="font-mono font-bold text-ink">{result.symbol}</div>
-          <div className="text-xs text-ink-faint mt-0.5">
+          <div className="flex items-center gap-1.5 flex-wrap mb-0.5">
+            <span className="font-mono font-bold text-ink">{result.symbol}</span>
+            {categoryBadge}
+            {elapsedBadge}
+          </div>
+          <div className="text-xs text-ink-faint">
             上場後 {result.elapsedHours}h &nbsp;·&nbsp; {formatPrice(result.currentPrice)} USDT
           </div>
         </div>
         <div className="flex flex-col items-end gap-1.5 flex-shrink-0">
           <div className="flex items-center gap-1">
             {Array.from({ length: 5 }, (_, i) => (
-              <span
-                key={i}
-                className={`w-2.5 h-2.5 rounded-full ${i < result.score ? 'bg-blue-400' : 'bg-rim'}`}
-              />
+              <span key={i} className={`w-2.5 h-2.5 rounded-full ${i < result.score ? 'bg-blue-400' : 'bg-rim'}`} />
             ))}
             <span className="ml-1 text-sm font-bold text-ink">{result.score}/5</span>
           </div>
@@ -98,18 +106,28 @@ function ScoreCard({ result, btcChangeP }: { result: ScoreResult; btcChangeP: nu
   )
 }
 
+const TAB_CONFIG: { key: ElapsedCategory; label: string; desc: string }[] = [
+  { key: 'sweet',   label: '推奨対象',  desc: '24〜48h — スイートスポット' },
+  { key: 'waiting', label: '待機中',    desc: '0〜24h — まだ早い' },
+  { key: 'late',    label: '観察のみ',  desc: '48h超 — 期待値逓減' },
+]
+
 export default function ScorePage() {
-  const [state, setState] = useState<ScoreState | null>(null)
-  const [loading, setLoading] = useState(false)
-  const [error, setError] = useState<string | null>(null)
+  const [state, setState]       = useState<ScoreState | null>(null)
+  const [loading, setLoading]   = useState(false)
+  const [error, setError]       = useState<string | null>(null)
   const [secondsLeft, setSecondsLeft] = useState(REFRESH_MS / 1000)
   const nextAt = useRef(0)
+
+  const [activeTab, setActiveTab]         = useState<ElapsedCategory>('sweet')
+  const [showStock, setShowStock]         = useState(false)
+  const [showCommodity, setShowCommodity] = useState(false)
 
   const fetchScores = useCallback(async () => {
     setLoading(true)
     setError(null)
     try {
-      const res = await fetch('/api/score')
+      const res  = await fetch('/api/score')
       const json = await res.json()
       if (!json.success) throw new Error(json.error)
       setState({ results: json.results, btcChangeP: json.btcChangeP, fetchedAt: json.fetchedAt })
@@ -141,19 +159,44 @@ export default function ScorePage() {
   const mm = Math.floor(secondsLeft / 60)
   const ss = String(secondsLeft % 60).padStart(2, '0')
 
+  // カテゴリフィルター適用後の全銘柄
+  const visibleAll = (state?.results ?? []).filter((r) => {
+    if (r.symbolCategory === 'stock'     && !showStock)     return false
+    if (r.symbolCategory === 'commodity' && !showCommodity) return false
+    return true
+  })
+
+  // タブ別件数
+  const tabCounts = {
+    sweet:   visibleAll.filter((r) => r.elapsedCategory === 'sweet').length,
+    waiting: visibleAll.filter((r) => r.elapsedCategory === 'waiting').length,
+    late:    visibleAll.filter((r) => r.elapsedCategory === 'late').length,
+  }
+
+  // 現在タブの銘柄
+  const displayed = visibleAll.filter((r) => r.elapsedCategory === activeTab)
+
+  const shortCount   = displayed.filter((r) => r.recommendation === 'short').length
+  const considerCount = displayed.filter((r) => r.recommendation === 'consider').length
+
   return (
     <div className="min-h-screen p-6">
       <div className="max-w-6xl mx-auto">
 
-        {/* Page header */}
+        {/* ページヘッダー */}
         <div className="flex flex-wrap items-start justify-between gap-4 mb-6">
           <div>
             <h1 className="text-2xl font-bold text-ink">自動スコアリング</h1>
-            <p className="text-ink-dim text-sm mt-1">新規上場銘柄のショート機会を5点満点でスコアリング（直近7日）</p>
+            <p className="text-ink-dim text-sm mt-1">
+              新規上場銘柄を5点満点でスコアリング
+              <span className="ml-2 text-ink-faint text-xs">
+                ※ バックテスト結果より 24〜48h後エントリーがスイートスポット。48h超は期待値逓減
+              </span>
+            </p>
           </div>
 
           <div className="flex items-center gap-4">
-            {/* BTC badge */}
+            {/* BTC バッジ */}
             {state && (
               <div className="bg-panel border border-rim rounded-xl px-4 py-3 text-center min-w-[84px]">
                 <div className="text-xs text-ink-faint mb-1">BTC 24h</div>
@@ -164,7 +207,7 @@ export default function ScorePage() {
               </div>
             )}
 
-            {/* Refresh button + countdown */}
+            {/* 更新ボタン */}
             <div className="flex flex-col items-end gap-1">
               <button
                 onClick={fetchScores}
@@ -180,14 +223,12 @@ export default function ScorePage() {
           </div>
         </div>
 
-        {/* Error */}
+        {/* エラー */}
         {error && (
-          <div className="bg-red-950/60 border border-red-800 rounded-xl p-4 mb-6 text-red-400 text-sm">
-            {error}
-          </div>
+          <div className="bg-red-950/60 border border-red-800 rounded-xl p-4 mb-6 text-red-400 text-sm">{error}</div>
         )}
 
-        {/* Initial loading */}
+        {/* 初回ローディング */}
         {loading && !state && (
           <div className="text-center py-24">
             <div className="text-ink-dim text-lg mb-2">スコアリング中...</div>
@@ -195,46 +236,92 @@ export default function ScorePage() {
           </div>
         )}
 
-        {/* Stats bar */}
         {state && (
-          <div className="flex flex-wrap gap-4 mb-5 text-sm">
-            <span className="text-ink-faint">
-              対象: <span className="text-ink">{state.results.length}</span> 銘柄
-            </span>
-            <span className="text-ink-faint">
-              ショート推奨:{' '}
-              <span className="text-red-400 font-medium">
-                {state.results.filter((r) => r.recommendation === 'short').length}
-              </span>{' '}
-              件
-            </span>
-            <span className="text-ink-faint">
-              要検討:{' '}
-              <span className="text-amber-400 font-medium">
-                {state.results.filter((r) => r.recommendation === 'consider').length}
-              </span>{' '}
-              件
-            </span>
-            <span className="ml-auto text-ink-faint">
-              {new Date(state.fetchedAt).toLocaleTimeString('ja-JP')} 時点
-            </span>
-          </div>
-        )}
+          <>
+            {/* カテゴリフィルター */}
+            <div className="bg-panel border border-rim rounded-xl px-5 py-3.5 mb-4 flex flex-wrap items-center gap-5">
+              <span className="text-xs text-ink-faint font-medium uppercase tracking-wide">表示フィルター</span>
+              <label className="flex items-center gap-2 cursor-default select-none">
+                <input type="checkbox" checked readOnly className="w-4 h-4 accent-blue-500" />
+                <span className="text-sm text-ink-dim">暗号通貨</span>
+              </label>
+              <label className="flex items-center gap-2 cursor-pointer select-none">
+                <input type="checkbox" checked={showStock} onChange={(e) => setShowStock(e.target.checked)} className="w-4 h-4 accent-purple-500" />
+                <span className="text-sm text-ink-dim">株式トークン（STOCK）を含む</span>
+              </label>
+              <label className="flex items-center gap-2 cursor-pointer select-none">
+                <input type="checkbox" checked={showCommodity} onChange={(e) => setShowCommodity(e.target.checked)} className="w-4 h-4 accent-amber-500" />
+                <span className="text-sm text-ink-dim">コモディティ（XAU/OIL等）を含む</span>
+              </label>
+            </div>
 
-        {/* Empty state */}
-        {state && state.results.length === 0 && !loading && (
-          <div className="text-center py-24 text-ink-faint">
-            直近7日の新規上場銘柄が見つかりませんでした
-          </div>
-        )}
+            {/* タブ */}
+            <div className="flex gap-2 mb-5 flex-wrap">
+              {TAB_CONFIG.map(({ key, label, desc }) => (
+                <button
+                  key={key}
+                  onClick={() => setActiveTab(key)}
+                  className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium transition-colors border ${
+                    activeTab === key
+                      ? 'bg-blue-600 border-blue-500 text-white'
+                      : 'bg-panel border-rim text-ink-dim hover:text-ink hover:bg-panel-raised'
+                  }`}
+                >
+                  <span>{label}</span>
+                  <span className={`text-xs px-1.5 py-0.5 rounded-full font-mono ${
+                    activeTab === key ? 'bg-white/20 text-white' : 'bg-panel-raised text-ink-faint'
+                  }`}>
+                    {tabCounts[key]}
+                  </span>
+                </button>
+              ))}
+              <span className="ml-1 self-center text-xs text-ink-faint">
+                {TAB_CONFIG.find((t) => t.key === activeTab)?.desc}
+              </span>
+            </div>
 
-        {/* Card grid */}
-        {state && state.results.length > 0 && (
-          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-            {state.results.map((r) => (
-              <ScoreCard key={r.symbol} result={r} btcChangeP={state.btcChangeP} />
-            ))}
-          </div>
+            {/* 統計バー（sweet タブのみ推奨件数を表示） */}
+            <div className="flex flex-wrap gap-4 mb-5 text-sm">
+              <span className="text-ink-faint">
+                表示: <span className="text-ink">{displayed.length}</span> 銘柄
+              </span>
+              {activeTab === 'sweet' && (
+                <>
+                  <span className="text-ink-faint">
+                    ショート推奨:{' '}
+                    <span className="text-red-400 font-medium">{shortCount}</span> 件
+                  </span>
+                  <span className="text-ink-faint">
+                    要検討:{' '}
+                    <span className="text-amber-400 font-medium">{considerCount}</span> 件
+                  </span>
+                </>
+              )}
+              <span className="ml-auto text-ink-faint">
+                {new Date(state.fetchedAt).toLocaleTimeString('ja-JP')} 時点
+              </span>
+            </div>
+
+            {/* 空ステート */}
+            {displayed.length === 0 && !loading && (
+              <div className="text-center py-24 text-ink-faint">
+                {activeTab === 'sweet'
+                  ? '現在、24〜48h経過の銘柄はありません'
+                  : activeTab === 'waiting'
+                  ? '現在、待機中（0〜24h）の銘柄はありません'
+                  : '現在、48h超の銘柄はありません'}
+              </div>
+            )}
+
+            {/* カードグリッド */}
+            {displayed.length > 0 && (
+              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+                {displayed.map((r) => (
+                  <ScoreCard key={r.symbol} result={r} btcChangeP={state.btcChangeP} />
+                ))}
+              </div>
+            )}
+          </>
         )}
 
       </div>

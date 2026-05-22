@@ -76,3 +76,12 @@ export function recentContracts(contracts: MexcContract[], days: number): MexcCo
   const cutoff = Date.now() - days * 24 * 60 * 60 * 1000
   return contracts.filter((c) => c.state === 0 && c.createTime >= cutoff)
 }
+
+const STOCK_PATTERN = /STOCK$/i
+const COMMODITY_PATTERNS = [/^XAU/i, /^XAG/i, /^XPT/i, /^XPD/i, /OIL_/i, /^WTI/i, /^BRENT/i]
+
+export function getSymbolCategory(symbol: string): 'crypto' | 'stock' | 'commodity' {
+  if (STOCK_PATTERN.test(symbol)) return 'stock'
+  if (COMMODITY_PATTERNS.some((p) => p.test(symbol))) return 'commodity'
+  return 'crypto'
+}

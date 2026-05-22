@@ -122,6 +122,9 @@ export type ScoreDetail = {
   btcBearish: boolean     // ⑤ BTC環境（横ばい・下落）
 }
 
+export type ElapsedCategory = 'waiting' | 'sweet' | 'late'
+export type SymbolCategory  = 'crypto'  | 'stock' | 'commodity'
+
 export type ScoreResult = {
   symbol: string
   listingTime: number
@@ -131,10 +134,12 @@ export type ScoreResult = {
   fundingRate: number     // 小数形式（0.003 = 0.3%）
   score: number           // 0–5
   detail: ScoreDetail
-  recommendation: 'short' | 'consider' | 'pass'
+  recommendation: 'short' | 'consider' | 'pass' | 'excluded'
   slPrice: number         // currentPrice * 1.30
   tpPrice: number         // currentPrice * 0.80
   elapsedHours: number
+  elapsedCategory: ElapsedCategory  // waiting <24h / sweet 24-48h / late >48h
+  symbolCategory: SymbolCategory    // crypto / stock / commodity
 }
 
 export type GridsearchLatestData = {
