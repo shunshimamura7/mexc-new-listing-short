@@ -12,13 +12,13 @@ type CollectResult = {
 type StoredEntry = Pick<ListingData, 'symbol' | 'listingTime' | 'initialPumpPct'>
 
 export default function CollectPage() {
-  const [days, setDays]           = useState(30)
-  const [loading, setLoading]     = useState(false)
-  const [results, setResults]     = useState<CollectResult[]>([])
-  const [total, setTotal]         = useState(0)
-  const [progress, setProgress]   = useState(0)
-  const [stored, setStored]       = useState<StoredEntry[]>([])
-  const [error, setError]         = useState<string | null>(null)
+  const [days, setDays]         = useState(30)
+  const [loading, setLoading]   = useState(false)
+  const [results, setResults]   = useState<CollectResult[]>([])
+  const [total, setTotal]       = useState(0)
+  const [progress, setProgress] = useState(0)
+  const [stored, setStored]     = useState<StoredEntry[]>([])
+  const [error, setError]       = useState<string | null>(null)
 
   const fetchStored = useCallback(async () => {
     const res = await fetch('/api/storage')
@@ -27,8 +27,8 @@ export default function CollectPage() {
     if (json.success) {
       setStored(
         (json.listings as ListingData[]).map((l) => ({
-          symbol: l.symbol,
-          listingTime: l.listingTime,
+          symbol:         l.symbol,
+          listingTime:    l.listingTime,
           initialPumpPct: l.initialPumpPct,
         }))
       )
@@ -57,8 +57,7 @@ export default function CollectPage() {
       const tot = json1.total as number
       setTotal(tot)
 
-      const skipResults: CollectResult[] = toSkip.map((s) => ({ symbol: s, status: 'skip' }))
-      setResults(skipResults)
+      setResults(toSkip.map((s) => ({ symbol: s, status: 'skip' })))
       setProgress(toSkip.length)
 
       for (const { symbol, createTime } of toFetch) {
@@ -68,8 +67,7 @@ export default function CollectPage() {
           body: JSON.stringify({ symbol, createTime }),
         })
         const json2 = await res2.json()
-        const entry: CollectResult = { symbol, status: json2.status ?? 'error', error: json2.error }
-        setResults((prev) => [...prev, entry])
+        setResults((prev) => [...prev, { symbol, status: json2.status ?? 'error', error: json2.error }])
         setProgress((prev) => prev + 1)
       }
 
@@ -95,18 +93,18 @@ export default function CollectPage() {
           <p className="text-ink-dim text-sm">MEXC APIから新規上場銘柄のKlineデータを取得・保存します</p>
         </div>
 
-        {/* 収集設定 */}
+        {/* 取得設定 */}
         <div className="bg-panel rounded-xl p-6 mb-6 border border-rim">
           <h2 className="text-base font-semibold text-ink mb-4">取得設定</h2>
-          <div className="flex items-center gap-4 mb-5">
-            <label className="text-ink-dim text-sm whitespace-nowrap">直近</label>
+          <div className="flex items-center gap-3 mb-5 flex-wrap">
+            <span className="text-ink-dim text-sm">直近</span>
             <input
               type="number" min={1} max={365} value={days}
               onChange={(e) => setDays(Number(e.target.value))}
-              className="w-24 bg-panel-raised border border-rim rounded-lg px-3 py-2 text-ink text-center focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="w-20 bg-panel-raised border border-rim rounded-lg px-3 py-2 text-ink text-center focus:outline-none focus:ring-2 focus:ring-blue-500"
               disabled={loading}
             />
-            <label className="text-ink-dim text-sm">日以内の新規上場銘柄</label>
+            <span className="text-ink-dim text-sm">日以内の新規上場銘柄</span>
           </div>
           <button
             onClick={handleCollect}
@@ -117,105 +115,104 @@ export default function CollectPage() {
           </button>
         </div>
 
-        {/* Error */}
+        {/* エラー */}
         {error && (
           <div className="bg-red-950/60 border border-red-800 rounded-xl p-4 mb-6 text-red-400 text-sm">
             {error}
           </div>
         )}
 
-        {/* Progress + results */}
-        {(loading || results.length > 0) && (
-          <div className="bg-panel rounded-xl p-6 mb-6 border border-rim">
-            <h2 className="text-base font-semibold text-ink mb-4">
-              収集結果
-              <span className="ml-2 text-sm font-normal text-ink-faint">対象 {total} 件</span>
-            </h2>
-
-            {loading && total > 0 && (
-              <div className="mb-5">
-                <div className="flex justify-between text-xs text-ink-faint mb-1.5">
-                  <span>{progress} / {total}</span>
-                  <span>{pct}%</span>
-                </div>
-                <div className="w-full bg-panel-raised rounded-full h-2">
-                  <div
-                    className="bg-blue-500 h-2 rounded-full transition-all duration-300"
-                    style={{ width: `${pct}%` }}
-                  />
-                </div>
-              </div>
-            )}
-
-            <div className="flex gap-8 mb-5">
-              {[
-                { label: '取得完了', count: done,     color: 'text-green-400' },
-                { label: 'スキップ', count: skip,     color: 'text-amber-400' },
-                { label: 'APIエラー', count: errCount, color: 'text-red-400'   },
-              ].map(({ label, count, color }) => (
-                <div key={label} className="text-center">
-                  <div className={`text-2xl font-bold font-mono ${color}`}>{count}</div>
-                  <div className="text-xs text-ink-faint mt-1">{label}</div>
-                </div>
-              ))}
+        {/* プログレスバー */}
+        {loading && total > 0 && (
+          <div className="bg-panel rounded-xl p-5 border border-rim mb-4">
+            <div className="flex justify-between text-xs text-ink-faint mb-2">
+              <span>収集中... {progress} / {total}</span>
+              <span>{pct}%</span>
             </div>
-
-            <div className="max-h-48 overflow-y-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="text-ink-faint text-left border-b border-rim">
-                    <th className="pb-2 pr-4 font-medium">銘柄</th>
-                    <th className="pb-2 font-medium">ステータス</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {results.map((r) => (
-                    <tr key={r.symbol} className="border-b border-rim">
-                      <td className="py-1.5 pr-4 font-mono text-ink">{r.symbol}</td>
-                      <td className="py-1.5">
-                        {r.status === 'done'  && <span className="text-green-400">完了</span>}
-                        {r.status === 'skip'  && <span className="text-amber-400">スキップ</span>}
-                        {r.status === 'error' && <span className="text-red-400">エラー: {r.error}</span>}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+            <div className="w-full bg-panel-raised rounded-full h-2">
+              <div
+                className="bg-blue-500 h-2 rounded-full transition-all duration-300"
+                style={{ width: `${pct}%` }}
+              />
             </div>
           </div>
         )}
 
-        {/* Stored listings */}
-        <div className="bg-panel rounded-xl p-6 border border-rim">
-          <h2 className="text-base font-semibold text-ink mb-4">
-            取得済み銘柄
-            <span className="ml-2 text-sm font-normal text-ink-faint">{stored.length} 件</span>
-          </h2>
+        {/* サマリーカード */}
+        {results.length > 0 && (
+          <>
+            <div className="grid grid-cols-3 gap-4 mb-4">
+              {[
+                { label: '取得完了', count: done,     text: 'text-green-400', border: 'border-green-500/30', bg: 'bg-green-500/5'  },
+                { label: 'スキップ', count: skip,     text: 'text-amber-400', border: 'border-amber-500/30', bg: 'bg-amber-500/5'  },
+                { label: 'APIエラー', count: errCount, text: 'text-red-400',   border: 'border-red-500/30',   bg: 'bg-red-500/5'    },
+              ].map(({ label, count, text, border, bg }) => (
+                <div key={label} className={`rounded-xl p-5 border ${border} ${bg} text-center`}>
+                  <div className={`text-4xl font-bold font-mono ${text}`}>{count}</div>
+                  <div className="text-sm text-ink-faint mt-2">{label}</div>
+                </div>
+              ))}
+            </div>
+
+            {/* 銘柄別ステータスリスト */}
+            <div className="bg-panel rounded-xl border border-rim mb-6 overflow-hidden">
+              <div className="px-5 py-3.5 border-b border-rim bg-panel-raised">
+                <h2 className="text-sm font-semibold text-ink">銘柄別ステータス</h2>
+              </div>
+              <div className="max-h-56 overflow-y-auto divide-y divide-rim">
+                {results.map((r) => (
+                  <div key={r.symbol} className="flex items-center justify-between px-5 py-2.5 hover:bg-panel-raised transition-colors">
+                    <span className="font-mono text-sm text-ink">{r.symbol}</span>
+                    <span className={`text-sm font-medium ${
+                      r.status === 'done'  ? 'text-green-400' :
+                      r.status === 'skip'  ? 'text-amber-400' : 'text-red-400'
+                    }`}>
+                      {r.status === 'done'  && '✓ 取得完了'}
+                      {r.status === 'skip'  && '– スキップ'}
+                      {r.status === 'error' && `✗ エラー${r.error ? ': ' + r.error : ''}`}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </>
+        )}
+
+        {/* 取得済み銘柄テーブル */}
+        <div className="bg-panel rounded-xl border border-rim overflow-hidden">
+          <div className="px-6 py-4 border-b border-rim bg-panel-raised flex items-center justify-between">
+            <h2 className="text-base font-semibold text-ink">取得済み銘柄</h2>
+            <span className="text-sm text-ink-faint font-mono bg-panel px-3 py-1 rounded-lg border border-rim">
+              {stored.length} 件
+            </span>
+          </div>
           {stored.length === 0 ? (
-            <p className="text-ink-faint text-sm">データなし。「取得開始」で収集してください。</p>
+            <div className="px-6 py-12 text-center text-ink-faint text-sm">
+              データなし。「取得開始」で収集してください。
+            </div>
           ) : (
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
                   <tr className="text-ink-faint text-left border-b border-rim">
-                    <th className="pb-2 pr-6 font-medium">銘柄</th>
-                    <th className="pb-2 pr-6 font-medium">上場日時</th>
-                    <th className="pb-2 text-right font-medium">初動ポンプ率</th>
+                    <th className="px-6 py-3 font-medium">銘柄</th>
+                    <th className="px-4 py-3 font-medium">上場日時</th>
+                    <th className="px-6 py-3 text-right font-medium">初動ポンプ率</th>
                   </tr>
                 </thead>
-                <tbody>
-                  {stored
+                <tbody className="divide-y divide-rim">
+                  {[...stored]
                     .sort((a, b) => b.listingTime - a.listingTime)
                     .map((s) => (
-                      <tr key={s.symbol} className="border-b border-rim hover:bg-panel-raised transition-colors">
-                        <td className="py-2.5 pr-6 font-mono text-ink">{s.symbol}</td>
-                        <td className="py-2.5 pr-6 text-ink-dim">
+                      <tr key={s.symbol} className="hover:bg-panel-raised transition-colors">
+                        <td className="px-6 py-3 font-mono text-ink">{s.symbol}</td>
+                        <td className="px-4 py-3 text-ink-dim">
                           {new Date(s.listingTime).toLocaleString('ja-JP', {
                             year: 'numeric', month: '2-digit', day: '2-digit',
                             hour: '2-digit', minute: '2-digit',
                           })}
                         </td>
-                        <td className="py-2.5 text-right">
+                        <td className="px-6 py-3 text-right">
                           <span className={s.initialPumpPct >= 30 ? 'text-green-400 font-medium' : 'text-ink-dim'}>
                             +{s.initialPumpPct.toFixed(1)}%
                           </span>
