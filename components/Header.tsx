@@ -5,8 +5,8 @@ import { usePathname } from 'next/navigation'
 import { useEffect, useState } from 'react'
 
 const NAV_LINKS = [
-  { href: '/score',   label: 'スコアリング' },
-  { href: '/collect', label: 'データ収集' },
+  { href: '/score',    label: 'スコアリング' },
+  { href: '/collect',  label: 'データ収集' },
   { href: '/backtest', label: 'バックテスト' },
 ]
 
@@ -26,18 +26,23 @@ export function Header() {
   }
 
   return (
-    <header className="sticky top-0 z-50 bg-gray-900 border-b border-gray-800">
-      <div className="max-w-5xl mx-auto px-6 h-14 flex items-center justify-between">
+    <header className="sticky top-0 z-50 bg-panel border-b border-rim">
+      <div className="max-w-6xl mx-auto px-6 h-14 flex items-center justify-between">
 
         {/* Logo */}
-        <Link
-          href="/"
-          className="text-white font-bold text-base tracking-tight hover:text-gray-300 transition-colors"
-        >
-          MEXC Short
+        <Link href="/" className="flex items-center gap-2.5 group">
+          <div className="w-8 h-8 rounded-lg bg-blue-600 flex items-center justify-center flex-shrink-0">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+              <polyline points="22 7 13.5 15.5 8.5 10.5 2 17"/>
+              <polyline points="16 7 22 7 22 13"/>
+            </svg>
+          </div>
+          <span className="font-bold text-ink text-base group-hover:text-blue-400 transition-colors">
+            MEXC Short
+          </span>
         </Link>
 
-        {/* Nav links + toggle */}
+        {/* Nav + toggle */}
         <div className="flex items-center gap-1">
           {NAV_LINKS.map(({ href, label }) => (
             <Link
@@ -45,23 +50,21 @@ export function Header() {
               href={href}
               className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
                 pathname === href
-                  ? 'bg-gray-700 text-white'
-                  : 'text-gray-400 hover:text-gray-200 hover:bg-gray-800'
+                  ? 'bg-panel-raised text-blue-400'
+                  : 'text-ink-dim hover:text-ink hover:bg-panel-raised'
               }`}
             >
               {label}
             </Link>
           ))}
 
-          {/* Divider */}
-          <div className="w-px h-5 bg-gray-700 mx-2" />
+          <div className="w-px h-5 bg-rim mx-2" />
 
-          {/* Theme toggle */}
           <button
             onClick={toggleTheme}
             title={isDark ? 'ライトモード' : 'ダークモード'}
             aria-label="テーマ切り替え"
-            className="p-2 rounded-lg text-gray-400 hover:text-gray-200 hover:bg-gray-800 transition-colors"
+            className="p-2 rounded-lg text-ink-dim hover:text-ink hover:bg-panel-raised transition-colors"
           >
             {isDark ? (
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
