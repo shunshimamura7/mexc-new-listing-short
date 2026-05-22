@@ -1,9 +1,8 @@
 import Link from 'next/link'
 import { loadAllListings, storageStats } from '@/lib/storage'
 
-export default function HomePage() {
-  const stats = storageStats()
-  const listings = loadAllListings()
+export default async function HomePage() {
+  const [stats, listings] = await Promise.all([storageStats(), loadAllListings()])
 
   const recentListings = listings
     .sort((a, b) => b.listingTime - a.listingTime)
@@ -30,7 +29,14 @@ export default function HomePage() {
         </div>
 
         {/* ナビゲーション */}
-        <div className="grid grid-cols-2 gap-4 mb-8">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-8">
+          <Link
+            href="/score"
+            className="bg-red-700 hover:bg-red-600 rounded-xl p-6 transition-colors block"
+          >
+            <div className="text-lg font-semibold mb-1">スコアリング</div>
+            <div className="text-red-200 text-sm">新規上場銘柄のショート機会を5点満点で自動評価</div>
+          </Link>
           <Link
             href="/collect"
             className="bg-blue-600 hover:bg-blue-500 rounded-xl p-6 transition-colors block"

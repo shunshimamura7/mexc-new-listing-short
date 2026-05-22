@@ -15,7 +15,7 @@ export async function POST(req: NextRequest) {
   }
 
   try {
-    const listings = loadAllListings()
+    const listings = await loadAllListings()
     if (listings.length === 0) {
       return NextResponse.json({ success: false, error: 'データなし。先にデータ収集してください。' }, { status: 400 })
     }

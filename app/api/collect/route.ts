@@ -5,12 +5,7 @@ import type { Kline, ListingData } from '@/types'
 
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms))
 
-// レート制限(code=510)の場合だけリトライ
-async function fetchKlineSafe(
-  symbol: string,
-  startSec: number,
-  endSec: number
-): Promise<{ data: ReturnType<typeof getKline> extends Promise<infer U> ? U : never; error?: string }> {
+async function fetchKlineSafe(symbol: string, startSec: number, endSec: number) {
   for (let attempt = 1; attempt <= 3; attempt++) {
     try {
       const data = await getKline(symbol, startSec, endSec)
@@ -18,7 +13,6 @@ async function fetchKlineSafe(
     } catch (e) {
       const isRateLimit = (e as Error & { code?: number }).code === 510
       if (isRateLimit && attempt < 3) {
-        console.log(`[collect] ${symbol} rate limited, retry ${attempt}/3 after ${attempt * 1000}ms`)
         await sleep(attempt * 1000)
         continue
       }
@@ -28,91 +22,76 @@ async function fetchKlineSafe(
   return { data: undefined as never, error: 'max retries exceeded' }
 }
 
-// POST /api/collect  body: { days: number }
+// POST { days } → 候補リストを返す（未収集 / 収集済みに分類）
+// POST { symbol, createTime } → 1銘柄だけ収集して返す
 export async function POST(req: NextRequest) {
-  const { days = 30 } = await req.json().catch(() => ({}))
+  const body = await req.json().catch(() => ({}))
+
+  // ── 候補リスト取得モード ──────────────────────────────
+  if ('days' in body && !('symbol' in body)) {
+    const days = Number(body.days ?? 30)
+    try {
+      const contracts = await getContractList()
+      const candidates = recentContracts(contracts, days)
+      const checks = await Promise.all(
+        candidates.map(async (c) => ({ ...c, collected: !!(await loadListing(c.symbol)) }))
+      )
+      const toFetch = checks.filter((c) => !c.collected).map((c) => ({ symbol: c.symbol, createTime: c.createTime }))
+      const toSkip  = checks.filter((c) =>  c.collected).map((c) => c.symbol)
+      return NextResponse.json({ success: true, toFetch, toSkip, total: candidates.length })
+    } catch (e) {
+      return NextResponse.json({ success: false, error: String(e) }, { status: 500 })
+    }
+  }
+
+  // ── 1銘柄収集モード ──────────────────────────────────
+  const symbol     = String(body.symbol ?? '')
+  const createTime = Number(body.createTime ?? 0)
+  if (!symbol || !createTime) {
+    return NextResponse.json({ success: false, error: 'symbol と createTime が必要です' }, { status: 400 })
+  }
 
   try {
-    const [contracts, tickers] = await Promise.all([getContractList(), getTickers()])
-
-    const candidates = recentContracts(contracts, days)
+    const [tickers] = await Promise.all([getTickers()])
     const tickerMap = new Map(tickers.map((t) => [t.symbol, t]))
 
-    console.log(`[collect] 対象: ${candidates.length} 件 (直近 ${days} 日)`)
+    const startSec = Math.floor(createTime / 1000)
+    const endSec   = startSec + 72 * 3600
+    const { data: raw, error: fetchError } = await fetchKlineSafe(symbol, startSec, endSec)
 
-    const results: { symbol: string; status: 'done' | 'skip' | 'error'; error?: string }[] = []
-
-    for (const contract of candidates) {
-      const { symbol, createTime } = contract
-
-      if (loadListing(symbol)) {
-        results.push({ symbol, status: 'skip' })
-        continue
-      }
-
-      // リクエスト間隔 200ms（レート制限対策）
-      await sleep(200)
-
-      const startSec = Math.floor(createTime / 1000)
-      const endSec = startSec + 72 * 3600
-      const { data: raw, error: fetchError } = await fetchKlineSafe(symbol, startSec, endSec)
-
-      if (fetchError) {
-        console.warn(`[collect] ${symbol} SKIP (fetch error): ${fetchError}`)
-        results.push({ symbol, status: 'error', error: fetchError })
-        continue
-      }
-
-      if (!raw?.time?.length) {
-        console.warn(`[collect] ${symbol} SKIP (no kline data)`)
-        results.push({ symbol, status: 'skip', error: 'no kline data' })
-        continue
-      }
-
-      const klines: Kline[] = raw.time.slice(0, 72).map((t, i) => ({
-        time: t,
-        open:   Number(raw.open[i]),
-        high:   Number(raw.high[i]),
-        low:    Number(raw.low[i]),
-        close:  Number(raw.close[i]),
-        volume: Number(raw.vol[i]),
-      }))
-
-      const entryPrice = klines[0]?.open || klines[0]?.close || 0
-      let peakHigh = entryPrice
-      let peakIdx = 0
-      for (let i = 0; i < klines.length; i++) {
-        if (klines[i].high > peakHigh) { peakHigh = klines[i].high; peakIdx = i }
-      }
-      const initialPumpPct = entryPrice > 0 ? ((peakHigh - entryPrice) / entryPrice) * 100 : 0
-
-      const ticker = tickerMap.get(symbol)
-
-      saveListing({
-        symbol,
-        listingTime: createTime,
-        klines,
-        initialPumpPct,
-        peakTime: peakIdx,
-        fdvMcRatio: 0,
-        maxFR:  ticker?.fundingRate ?? 0,
-        maxOI:  ticker?.holdVol    ?? 0,
-      } satisfies ListingData)
-
-      console.log(`[collect] ${symbol} DONE (${klines.length} candles, pump=${initialPumpPct.toFixed(1)}%)`)
-      results.push({ symbol, status: 'done' })
+    if (fetchError) {
+      return NextResponse.json({ success: true, symbol, status: 'error', error: fetchError })
+    }
+    if (!raw?.time?.length) {
+      return NextResponse.json({ success: true, symbol, status: 'skip', error: 'no kline data' })
     }
 
-    const summary = {
-      done:  results.filter(r => r.status === 'done').length,
-      skip:  results.filter(r => r.status === 'skip').length,
-      error: results.filter(r => r.status === 'error').length,
-    }
-    console.log(`[collect] 完了: done=${summary.done} skip=${summary.skip} error=${summary.error}`)
+    const klines: Kline[] = raw.time.slice(0, 72).map((t, i) => ({
+      time:   t,
+      open:   Number(raw.open[i]),
+      high:   Number(raw.high[i]),
+      low:    Number(raw.low[i]),
+      close:  Number(raw.close[i]),
+      volume: Number(raw.vol[i]),
+    }))
 
-    return NextResponse.json({ success: true, results, summary, total: candidates.length })
+    const entryPrice = klines[0]?.open || klines[0]?.close || 0
+    let peakHigh = entryPrice, peakIdx = 0
+    for (let i = 0; i < klines.length; i++) {
+      if (klines[i].high > peakHigh) { peakHigh = klines[i].high; peakIdx = i }
+    }
+    const initialPumpPct = entryPrice > 0 ? ((peakHigh - entryPrice) / entryPrice) * 100 : 0
+    const ticker = tickerMap.get(symbol)
+
+    await saveListing({
+      symbol, listingTime: createTime, klines, initialPumpPct,
+      peakTime: peakIdx, fdvMcRatio: 0,
+      maxFR: ticker?.fundingRate ?? 0,
+      maxOI: ticker?.holdVol    ?? 0,
+    } satisfies ListingData)
+
+    return NextResponse.json({ success: true, symbol, status: 'done' })
   } catch (e) {
-    console.error(`[collect] fatal error:`, e)
-    return NextResponse.json({ success: false, error: String(e) }, { status: 500 })
+    return NextResponse.json({ success: true, symbol, status: 'error', error: String(e) })
   }
 }

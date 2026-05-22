@@ -1,59 +1,125 @@
-import fs from 'fs'
-import path from 'path'
 import type { ListingData } from '@/types'
 
-const DATA_DIR = path.join(process.cwd(), 'data')
+// ローカル環境: fs / 本番環境(Vercel): @vercel/blob
+const IS_VERCEL = !!process.env.BLOB_READ_WRITE_TOKEN
 
-function ensureDir() {
-  if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true })
+// ===== Vercel Blob 実装 =====
+async function blobList(): Promise<string[]> {
+  const { list } = await import('@vercel/blob')
+  const { blobs } = await list({ prefix: 'listings/' })
+  return blobs.map((b) => b.pathname.replace('listings/', '').replace('.json', ''))
 }
 
-function filePath(symbol: string): string {
-  return path.join(DATA_DIR, `${symbol}.json`)
+async function blobLoad(symbol: string): Promise<ListingData | null> {
+  const { list } = await import('@vercel/blob')
+  const { blobs } = await list({ prefix: `listings/${symbol}.json` })
+  if (blobs.length === 0) return null
+  const res = await fetch(blobs[0].url)
+  if (!res.ok) return null
+  return res.json() as Promise<ListingData>
 }
 
-export function saveListing(data: ListingData): void {
-  ensureDir()
-  fs.writeFileSync(filePath(data.symbol), JSON.stringify(data, null, 2), 'utf-8')
+async function blobLoadAll(): Promise<ListingData[]> {
+  const symbols = await blobList()
+  const results = await Promise.all(symbols.map(blobLoad))
+  return results.filter((r): r is ListingData => r !== null)
 }
 
-export function loadListing(symbol: string): ListingData | null {
-  const p = filePath(symbol)
+async function blobSave(data: ListingData): Promise<void> {
+  const { put } = await import('@vercel/blob')
+  await put(`listings/${data.symbol}.json`, JSON.stringify(data), {
+    access: 'public',
+    contentType: 'application/json',
+    addRandomSuffix: false,
+  })
+}
+
+async function blobDelete(symbol: string): Promise<void> {
+  const { list, del } = await import('@vercel/blob')
+  const { blobs } = await list({ prefix: `listings/${symbol}.json` })
+  if (blobs.length > 0) await del(blobs[0].url)
+}
+
+async function blobDeleteAll(): Promise<void> {
+  const { list, del } = await import('@vercel/blob')
+  const { blobs } = await list({ prefix: 'listings/' })
+  await Promise.all(blobs.map((b) => del(b.url)))
+}
+
+// ===== ローカル fs 実装 =====
+function fsImpl() {
+  // Dynamic require to avoid bundling fs in edge runtime
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const fs   = require('fs')   as typeof import('fs')
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const path = require('path') as typeof import('path')
+  const DATA_DIR = path.join(process.cwd(), 'data')
+  const ensure = () => { if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true }) }
+  const fp = (s: string) => path.join(DATA_DIR, `${s}.json`)
+  return { fs, path, DATA_DIR, ensure, fp }
+}
+
+// ===== 公開 API (同期/非同期を統一して async に) =====
+export async function saveListing(data: ListingData): Promise<void> {
+  if (IS_VERCEL) return blobSave(data)
+  const { fs, ensure, fp } = fsImpl()
+  ensure()
+  fs.writeFileSync(fp(data.symbol), JSON.stringify(data, null, 2), 'utf-8')
+}
+
+export async function loadListing(symbol: string): Promise<ListingData | null> {
+  if (IS_VERCEL) return blobLoad(symbol)
+  const { fs, ensure, fp } = fsImpl()
+  ensure()
+  const p = fp(symbol)
   if (!fs.existsSync(p)) return null
   return JSON.parse(fs.readFileSync(p, 'utf-8')) as ListingData
 }
 
-export function loadAllListings(): ListingData[] {
-  ensureDir()
+export async function loadAllListings(): Promise<ListingData[]> {
+  if (IS_VERCEL) return blobLoadAll()
+  const { fs, path, DATA_DIR, ensure } = fsImpl()
+  ensure()
   return fs
     .readdirSync(DATA_DIR)
-    .filter((f) => f.endsWith('.json'))
-    .map((f) => JSON.parse(fs.readFileSync(path.join(DATA_DIR, f), 'utf-8')) as ListingData)
+    .filter((f: string) => f.endsWith('.json'))
+    .map((f: string) => JSON.parse(fs.readFileSync(path.join(DATA_DIR, f), 'utf-8')) as ListingData)
 }
 
-export function listSymbols(): string[] {
-  ensureDir()
-  return fs
-    .readdirSync(DATA_DIR)
-    .filter((f) => f.endsWith('.json'))
-    .map((f) => f.replace('.json', ''))
+export async function listSymbols(): Promise<string[]> {
+  if (IS_VERCEL) return blobList()
+  const { fs, DATA_DIR, ensure } = fsImpl()
+  ensure()
+  return fs.readdirSync(DATA_DIR).filter((f: string) => f.endsWith('.json')).map((f: string) => f.replace('.json', ''))
 }
 
-export function deleteListing(symbol: string): void {
-  const p = filePath(symbol)
+export async function deleteListing(symbol: string): Promise<void> {
+  if (IS_VERCEL) return blobDelete(symbol)
+  const { fs, ensure, fp } = fsImpl()
+  ensure()
+  const p = fp(symbol)
   if (fs.existsSync(p)) fs.unlinkSync(p)
 }
 
-export function deleteAll(): void {
-  ensureDir()
-  for (const f of fs.readdirSync(DATA_DIR).filter((f) => f.endsWith('.json'))) {
+export async function deleteAll(): Promise<void> {
+  if (IS_VERCEL) return blobDeleteAll()
+  const { fs, path, DATA_DIR, ensure } = fsImpl()
+  ensure()
+  for (const f of fs.readdirSync(DATA_DIR).filter((f: string) => f.endsWith('.json'))) {
     fs.unlinkSync(path.join(DATA_DIR, f))
   }
 }
 
-export function storageStats(): { count: number; bytes: number } {
-  ensureDir()
-  const files = fs.readdirSync(DATA_DIR).filter((f) => f.endsWith('.json'))
-  const bytes = files.reduce((acc, f) => acc + fs.statSync(path.join(DATA_DIR, f)).size, 0)
+export async function storageStats(): Promise<{ count: number; bytes: number }> {
+  if (IS_VERCEL) {
+    const { list } = await import('@vercel/blob')
+    const { blobs } = await list({ prefix: 'listings/' })
+    const bytes = blobs.reduce((s, b) => s + (b.size ?? 0), 0)
+    return { count: blobs.length, bytes }
+  }
+  const { fs, path, DATA_DIR, ensure } = fsImpl()
+  ensure()
+  const files = fs.readdirSync(DATA_DIR).filter((f: string) => f.endsWith('.json'))
+  const bytes = files.reduce((acc: number, f: string) => acc + fs.statSync(path.join(DATA_DIR, f)).size, 0)
   return { count: files.length, bytes }
 }

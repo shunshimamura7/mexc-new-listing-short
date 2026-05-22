@@ -113,3 +113,26 @@ export type MexcTickerItem = {
   holdVol: number
   fundingRate: number
 }
+
+export type ScoreDetail = {
+  initialPump: boolean    // ① 初動ポンプ +50%以上
+  volumeExhaust: boolean  // ② 出来高枯渇（ピーク比30%以下）
+  elapsed24h: boolean     // ③ 上場から24時間以上経過
+  frHigh: boolean         // ④ FR > +0.3%
+  btcBearish: boolean     // ⑤ BTC環境（横ばい・下落）
+}
+
+export type ScoreResult = {
+  symbol: string
+  listingTime: number
+  currentPrice: number
+  initialPumpPct: number
+  volRatio: number        // latestVol / peakVol
+  fundingRate: number     // 小数形式（0.003 = 0.3%）
+  score: number           // 0–5
+  detail: ScoreDetail
+  recommendation: 'short' | 'consider' | 'pass'
+  slPrice: number         // currentPrice * 1.30
+  tpPrice: number         // currentPrice * 0.80
+  elapsedHours: number
+}
