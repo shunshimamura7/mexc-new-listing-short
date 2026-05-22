@@ -198,7 +198,7 @@ export default function BacktestPage() {
   const [entryHours, setEntryHours]       = useState(1)
   const [slPct, setSlPct]                 = useState(20)
   const [tpPct, setTpPct]                 = useState(30)
-  const [minPumpPct, setMinPumpPct]       = useState(0)
+  const [minPumpPct, setMinPumpPct]       = useState(50)
   const [minFdvMcRatio, setMinFdvMcRatio] = useState(0)
   const [minFR, setMinFR]                 = useState(0)
   const [excludeStock, setExcludeStock]   = useState(false)
@@ -385,6 +385,7 @@ export default function BacktestPage() {
             <div className="border-t border-rim pt-3 space-y-4">
               <p className="text-xs text-ink-faint uppercase tracking-wide">数値フィルター</p>
               <SliderField label="初動ポンプ幅 以上" value={minPumpPct} min={0} max={200} step={10} unit="%" onChange={setMinPumpPct} disabled={loading} />
+              <p className="text-xs text-blue-400/80 -mt-2">pattern_bible v0.4 確定条件: 50%以上</p>
               <div className="opacity-40">
                 <div className="flex justify-between text-sm mb-1">
                   <span className="text-ink-dim">FDV/MC 以上</span>

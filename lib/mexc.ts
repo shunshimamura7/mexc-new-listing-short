@@ -77,8 +77,27 @@ export function recentContracts(contracts: MexcContract[], days: number): MexcCo
   return contracts.filter((c) => c.state === 0 && c.createTime >= cutoff)
 }
 
-const STOCK_PATTERN = /STOCK$/i
-const COMMODITY_PATTERNS = [/^XAU/i, /^XAG/i, /^XPT/i, /^XPD/i, /OIL_/i, /^WTI/i, /^BRENT/i]
+// STOCK銘柄: SAMSUNGSTOCK_USDT のように "STOCK_USDT" で終わる
+const STOCK_PATTERN = /STOCK_USDT$/i
+
+// コモディティ銘柄: 貴金属・原油・産業金属など
+// 新しい銘柄が現れたらここに追記する
+const COMMODITY_PATTERNS: RegExp[] = [
+  /^XAU/i,       // 金
+  /^XAG/i,       // 銀
+  /^XPT/i,       // プラチナ
+  /^XPD/i,       // パラジウム
+  /OIL_/i,       // 原油 (CRUDEOIL_USDT 等)
+  /^WTI/i,       // WTI原油
+  /^BRENT/i,     // ブレント原油
+  /^ALUMINUM/i,  // アルミニウム
+  /^COPPER_/i,   // 銅
+  /^NICKEL_/i,   // ニッケル
+  /^ZINC_/i,     // 亜鉛
+  /^LEAD_/i,     // 鉛
+  /^TIN_/i,      // スズ
+  /_USD1$/i,     // USD1ペア (USDT 以外の別建てペア)
+]
 
 export function getSymbolCategory(symbol: string): 'crypto' | 'stock' | 'commodity' {
   if (STOCK_PATTERN.test(symbol)) return 'stock'
