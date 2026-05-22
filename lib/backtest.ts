@@ -160,8 +160,7 @@ export function runGridSearch(
         const wins = trades.filter((t) => t.pnlPct > 0).length
         const winRate = (wins / trades.length) * 100
         const avgPnl = trades.reduce((s, t) => s + t.pnlPct, 0) / trades.length
-        const ev = (winRate / 100) * tp - (1 - winRate / 100) * sl
-        results.push({ entryHours: hours, slPct: sl, tpPct: tp, winRate, avgPnl, expectedValue: ev, tradeCount: trades.length })
+        results.push({ entryHours: hours, slPct: sl, tpPct: tp, winRate, avgPnl, expectedValue: avgPnl, tradeCount: trades.length })
       }
     }
   }
