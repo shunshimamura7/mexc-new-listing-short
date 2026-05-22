@@ -1,4 +1,4 @@
-import type { ListingData } from '@/types'
+import type { ListingData, GridsearchLatestData } from '@/types'
 
 // ローカル環境: fs / 本番環境(Vercel): @vercel/blob
 const IS_VERCEL = !!process.env.BLOB_READ_WRITE_TOKEN
@@ -116,6 +116,39 @@ export async function deleteAll(): Promise<void> {
   for (const f of fs.readdirSync(DATA_DIR).filter((f: string) => f.endsWith('.json'))) {
     fs.unlinkSync(path.join(DATA_DIR, f))
   }
+}
+
+export async function saveGridsearchLatest(data: GridsearchLatestData): Promise<void> {
+  if (IS_VERCEL) {
+    const { put } = await import('@vercel/blob')
+    await put('gridsearch/latest.json', JSON.stringify(data), {
+      access: 'private',
+      contentType: 'application/json',
+      addRandomSuffix: false,
+      allowOverwrite: true,
+    })
+    return
+  }
+  const { fs, ensure, fp } = fsImpl()
+  ensure()
+  fs.writeFileSync(fp('gridsearch-latest'), JSON.stringify(data, null, 2), 'utf-8')
+}
+
+export async function loadGridsearchLatest(): Promise<GridsearchLatestData | null> {
+  if (IS_VERCEL) {
+    const { list, getDownloadUrl } = await import('@vercel/blob')
+    const { blobs } = await list({ prefix: 'gridsearch/latest.json' })
+    if (blobs.length === 0) return null
+    const dlUrl = await getDownloadUrl(blobs[0].url)
+    const res = await fetch(dlUrl)
+    if (!res.ok) return null
+    return res.json() as Promise<GridsearchLatestData>
+  }
+  const { fs, ensure, fp } = fsImpl()
+  ensure()
+  const p = fp('gridsearch-latest')
+  if (!fs.existsSync(p)) return null
+  return JSON.parse(fs.readFileSync(p, 'utf-8')) as GridsearchLatestData
 }
 
 export async function storageStats(): Promise<{ count: number; bytes: number }> {

@@ -1,4 +1,4 @@
-name: 新規上場銘柄 自動収集
+name: 新規上場銘柄 自動収集 & バックテスト再計算
 
 on:
   schedule:
@@ -9,11 +9,14 @@ env:
   API_BASE: https://mexc-new-listing-short.vercel.app
 
 jobs:
-  collect:
+  collect-and-backtest:
     runs-on: ubuntu-latest
     timeout-minutes: 30
 
     steps:
+      # ──────────────────────────────────────────────
+      # Phase 1: 収集対象リスト取得
+      # ──────────────────────────────────────────────
       - name: フェーズ1 — 収集対象リスト取得
         run: |
           echo "直近7日の新規上場銘柄を確認中..."
@@ -34,19 +37,22 @@ jobs:
 
           echo "$RESPONSE" | jq -c '.toFetch' > /tmp/to_fetch.json
 
+      # ──────────────────────────────────────────────
+      # Phase 2: 銘柄ごとにKlineデータ収集
+      # ──────────────────────────────────────────────
       - name: フェーズ2 — 銘柄ごとにKlineデータ収集
         run: |
           COUNT=$(jq length /tmp/to_fetch.json)
 
           if [ "$COUNT" -eq 0 ]; then
-            echo "新規収集対象なし — 完了"
+            echo "新規収集対象なし"
             exit 0
           fi
 
           echo "$COUNT 銘柄を順次収集します"
 
           jq -c '.[]' /tmp/to_fetch.json | while IFS= read -r ITEM; do
-            SYMBOL=$(echo "$ITEM"    | jq -r '.symbol')
+            SYMBOL=$(echo "$ITEM"      | jq -r '.symbol')
             CREATE_TIME=$(echo "$ITEM" | jq -r '.createTime')
 
             RESULT=$(curl -s --retry 2 --retry-delay 3 --max-time 65 \
@@ -66,3 +72,36 @@ jobs:
           done
 
           echo "=== 収集完了 ==="
+
+      # ──────────────────────────────────────────────
+      # Phase 3: グリッドサーチ実行 & Blobに保存
+      # ──────────────────────────────────────────────
+      - name: フェーズ3 — グリッドサーチ実行 & 保存
+        run: |
+          echo "グリッドサーチを実行中..."
+          echo "  条件: 初動ポンプ50%以上 | エントリー 12/24/48h | SL 20/30/40/50% | TP 10/15/20/25/30%"
+
+          RESPONSE=$(curl -s --max-time 120 \
+            -X POST \
+            -H "Content-Type: application/json" \
+            -d '{
+              "entryHours":  [12, 24, 48],
+              "slRange":     [20, 30, 40, 50],
+              "tpRange":     [10, 15, 20, 25, 30],
+              "minPumpPct":  50,
+              "excludeStock": false,
+              "saveLatest":  true
+            }' \
+            "$API_BASE/api/gridsearch")
+
+          if [ "$(echo "$RESPONSE" | jq -r '.success')" != "true" ]; then
+            echo "グリッドサーチ失敗: $(echo "$RESPONSE" | jq -r '.error // "unknown"')"
+            exit 1
+          fi
+
+          COUNT=$(echo "$RESPONSE" | jq '.results | length')
+          echo "完了: $COUNT 組み合わせ計算、gridsearch-latest.json を Blob に保存"
+
+          echo "--- TOP3 ---"
+          echo "$RESPONSE" | jq -r \
+            '.results[:3][] | "  \(.entryHours)h後 / SL\(.slPct)% / TP\(.tpPct)%  勝率:\(.winRate | floor)%  EV:\(.expectedValue | . * 100 | round / 100)%"'

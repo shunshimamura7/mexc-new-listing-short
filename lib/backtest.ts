@@ -136,13 +136,21 @@ export function buildTimingChart(params: BacktestParams, allListings: ListingDat
   return points
 }
 
-export function runGridSearch(filters: FilterParams, allListings: ListingData[]): GridSearchResult[] {
+export function runGridSearch(
+  filters: FilterParams,
+  allListings: ListingData[],
+  opts?: { entryHours?: number[]; slRange?: number[]; tpRange?: number[] }
+): GridSearchResult[] {
   const listings = applyFilters(allListings, filters)
   const results: GridSearchResult[] = []
 
-  for (let hours = 1; hours <= 60; hours++) {
-    for (const sl of GS_SL_RANGE) {
-      for (const tp of GS_TP_RANGE) {
+  const hoursArr = opts?.entryHours ?? Array.from({ length: 60 }, (_, i) => i + 1)
+  const slArr    = opts?.slRange    ?? GS_SL_RANGE
+  const tpArr    = opts?.tpRange    ?? GS_TP_RANGE
+
+  for (const hours of hoursArr) {
+    for (const sl of slArr) {
+      for (const tp of tpArr) {
         const trades: TradeResult[] = []
         for (const listing of listings) {
           const t = evaluateTrade(listing, hours, sl, tp)

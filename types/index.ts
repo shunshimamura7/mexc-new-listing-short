@@ -136,3 +136,16 @@ export type ScoreResult = {
   tpPrice: number         // currentPrice * 0.80
   elapsedHours: number
 }
+
+export type GridsearchLatestData = {
+  results: GridSearchResult[]
+  listingCount: number
+  params: {
+    entryHours: number[]
+    slRange: number[]
+    tpRange: number[]
+    minPumpPct: number
+    excludeStock: boolean
+  }
+  savedAt: number
+}

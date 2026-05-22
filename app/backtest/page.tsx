@@ -1,10 +1,10 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine,
 } from 'recharts'
-import type { BacktestResponse, TradeResult, HeatmapCell, GridSearchResult } from '@/types'
+import type { BacktestResponse, TradeResult, HeatmapCell, GridSearchResult, GridsearchLatestData } from '@/types'
 
 const SL_RANGE = [5, 10, 15, 20, 25, 30, 35, 40, 45, 50]
 const TP_RANGE = [10, 15, 20, 25, 30, 35, 40, 45, 50, 55, 60, 65, 70]
@@ -95,6 +95,14 @@ function SliderField({
   )
 }
 
+function formatTimeAgo(ts: number): string {
+  const diff = Date.now() - ts
+  const h = Math.floor(diff / 3_600_000)
+  if (h < 1)  return `${Math.floor(diff / 60_000)}分前`
+  if (h < 24) return `${h}時間前`
+  return `${Math.floor(h / 24)}日前`
+}
+
 const OUTCOME_LABEL: Record<string, string> = { tp: 'TP', sl: 'SL', forced: '強制' }
 const OUTCOME_COLOR: Record<string, string> = {
   tp: 'text-green-400', sl: 'text-red-400', forced: 'text-amber-400',
@@ -124,6 +132,15 @@ export default function BacktestPage() {
   const [expandedKey, setExpandedKey]         = useState<string | null>(null)
   const [expandedTrades, setExpandedTrades]   = useState<Record<string, TradeResult[]>>({})
   const [expandedLoading, setExpandedLoading] = useState<string | null>(null)
+
+  const [latestGs, setLatestGs] = useState<GridsearchLatestData | null>(null)
+
+  useEffect(() => {
+    fetch('/api/gridsearch/latest')
+      .then((r) => r.json())
+      .then((j) => { if (j.success && j.data) setLatestGs(j.data) })
+      .catch(() => {})
+  }, [])
 
   function handleExcludeStock(v: boolean) {
     setExcludeStock(v)
@@ -213,6 +230,64 @@ export default function BacktestPage() {
           <h1 className="text-2xl font-bold text-ink mb-1">バックテスト</h1>
           <p className="text-ink-dim text-sm">エントリータイミング・SL/TPを最適化します</p>
         </div>
+
+        {/* 最新グリッドサーチ結果（GitHub Actions 自動計算） */}
+        {latestGs && (
+          <div className="bg-panel rounded-xl p-5 border border-rim mb-6">
+            <div className="flex flex-wrap items-start justify-between gap-3 mb-4">
+              <div>
+                <h2 className="font-semibold text-ink">最新グリッドサーチ結果</h2>
+                <p className="text-xs text-ink-faint mt-0.5">
+                  自動収集後に計算 · {formatTimeAgo(latestGs.savedAt)} 更新
+                  {' '}· データ {latestGs.listingCount} 件
+                  {' '}· 初動ポンプ {latestGs.params.minPumpPct}%以上
+                </p>
+              </div>
+              <span className="text-xs text-ink-faint bg-panel-raised px-2.5 py-1 rounded-lg font-mono">
+                {latestGs.params.entryHours.join('/')}h
+                {' '}× SL {latestGs.params.slRange.join('/')}%
+                {' '}× TP {latestGs.params.tpRange.join('/')}%
+              </span>
+            </div>
+
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="text-ink-faint text-left border-b border-rim">
+                    <th className="pb-2 pr-3 w-8 font-medium">#</th>
+                    <th className="pb-2 pr-3 font-medium">エントリー</th>
+                    <th className="pb-2 pr-3 text-right font-medium">SL</th>
+                    <th className="pb-2 pr-3 text-right font-medium">TP</th>
+                    <th className="pb-2 pr-3 text-right font-medium">勝率</th>
+                    <th className="pb-2 pr-3 text-right font-medium">平均PnL</th>
+                    <th className="pb-2 text-right font-medium">期待値</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {latestGs.results.slice(0, 10).map((r, i) => (
+                    <tr key={i} className="border-b border-rim hover:bg-panel-raised transition-colors">
+                      <td className={`py-2 pr-3 font-mono text-xs font-bold ${i < 3 ? 'text-emerald-400' : 'text-ink-faint'}`}>
+                        {i + 1}
+                      </td>
+                      <td className="py-2 pr-3 text-ink-dim">{r.entryHours}h後</td>
+                      <td className="py-2 pr-3 text-right font-mono text-red-400">{r.slPct}%</td>
+                      <td className="py-2 pr-3 text-right font-mono text-green-400">{r.tpPct}%</td>
+                      <td className={`py-2 pr-3 text-right font-mono ${r.winRate >= 50 ? 'text-green-400' : 'text-ink-dim'}`}>
+                        {r.winRate.toFixed(1)}%
+                      </td>
+                      <td className={`py-2 pr-3 text-right font-mono ${r.avgPnl >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                        {r.avgPnl >= 0 ? '+' : ''}{r.avgPnl.toFixed(2)}%
+                      </td>
+                      <td className={`py-2 text-right font-mono font-medium ${r.expectedValue >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                        {r.expectedValue >= 0 ? '+' : ''}{r.expectedValue.toFixed(2)}%
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
 

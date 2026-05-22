@@ -1,6 +1,7 @@
 {
   "functions": {
-    "app/api/collect/route.ts": { "maxDuration": 60 },
-    "app/api/score/route.ts":   { "maxDuration": 60 }
+    "app/api/collect/route.ts":           { "maxDuration": 60 },
+    "app/api/score/route.ts":             { "maxDuration": 60 },
+    "app/api/gridsearch/route.ts":        { "maxDuration": 60 }
   }
 }
