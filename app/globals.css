@@ -41,6 +41,10 @@ html.light .border-gray-700 { border-color: #d1d5db; }
 html.light .disabled\:bg-gray-700:disabled { background-color: #e5e7eb; }
 html.light .disabled\:text-gray-500:disabled { color: #9ca3af; }
 
+/* Header nav active state in light mode */
+html.light header .bg-gray-700 { background-color: #e5e7eb; }
+html.light header .text-white  { color: #111827; }
+
 /* Input fields in light mode */
 html.light input[type="number"],
 html.light input[type="text"] {
