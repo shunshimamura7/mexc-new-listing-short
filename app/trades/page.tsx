@@ -1,7 +1,8 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
-import type { Trade, TradeStatus } from '@/types'
+import type { Trade, TradeStatus, PaperTrade, PatternName } from '@/types'
+import { ALL_PATTERNS, PATTERN_SPECS, grossPnlPct, roundTripCostPct, formatPrice as fmtPrice } from '@/lib/trading-engine'
 
 const PRICE_POLL_MS = 10_000
 
@@ -268,7 +269,284 @@ function TradeRow({
   )
 }
 
+// ── Paper Trades View ─────────────────────────────────────────────────────────
+type PatternStat = { total: number; wins: number; totalPnl: number; liquidations: number }
+
+function computePatternStats(closed: PaperTrade[]): Partial<Record<PatternName, PatternStat>> {
+  const stats: Partial<Record<PatternName, PatternStat>> = {}
+  for (const t of closed) {
+    if (!stats[t.pattern]) stats[t.pattern] = { total: 0, wins: 0, totalPnl: 0, liquidations: 0 }
+    const s = stats[t.pattern]!
+    s.total++
+    if (t.exitReason === 'tp')          s.wins++
+    if (t.exitReason === 'liquidation') s.liquidations++
+    s.totalPnl += t.netPnlPct ?? 0
+  }
+  return stats
+}
+
+function PaperTradesView() {
+  const [trades, setTrades]   = useState<PaperTrade[]>([])
+  const [loading, setLoading] = useState(true)
+  const [prices, setPrices]   = useState<Record<string, number>>({})
+  const [subTab, setSubTab]   = useState<'open' | 'closed' | 'stats'>('stats')
+
+  const load = useCallback(async () => {
+    try {
+      const res  = await fetch('/api/paper-trades')
+      const json = await res.json()
+      if (json.success) setTrades(json.trades as PaperTrade[])
+    } finally {
+      setLoading(false)
+    }
+  }, [])
+
+  useEffect(() => { load() }, [load])
+
+  // Poll prices for open/pending trades
+  useEffect(() => {
+    const open = trades.filter((t) => t.status !== 'closed')
+    const syms = [...new Set(open.map((t) => t.symbol))]
+    if (!syms.length) return
+
+    async function poll() {
+      const entries = await Promise.all(
+        syms.map(async (s) => {
+          try {
+            const r = await fetch(`/api/mexc/ticker/${s}`)
+            const j = await r.json()
+            return j.success ? [s, j.price as number] as const : null
+          } catch { return null }
+        })
+      )
+      const map: Record<string, number> = {}
+      for (const e of entries) if (e) map[e[0]] = e[1]
+      setPrices(map)
+    }
+    poll()
+    const id = setInterval(poll, 10_000)
+    return () => clearInterval(id)
+  }, [trades])
+
+  const open   = trades.filter((t) => t.status !== 'closed')
+  const closed = trades.filter((t) => t.status === 'closed')
+  const stats  = computePatternStats(closed)
+
+  const totalClosedWins = closed.filter((t) => t.exitReason === 'tp').length
+  const totalWinRate    = closed.length > 0 ? totalClosedWins / closed.length * 100 : null
+  const avgNetPnl       = closed.length > 0
+    ? closed.reduce((s, t) => s + (t.netPnlPct ?? 0), 0) / closed.length
+    : null
+
+  if (loading) return <div className="text-center py-16 text-ink-faint text-sm">読み込み中...</div>
+
+  if (!trades.length) {
+    return (
+      <div className="text-center py-16 text-ink-faint text-sm">
+        <p>ペーパートレードがまだありません</p>
+        <p className="mt-1 text-xs">スコアリングAPIが推奨対象を検出すると自動エントリーされます</p>
+      </div>
+    )
+  }
+
+  return (
+    <div className="space-y-5">
+      {/* Summary cards */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        <div className="bg-panel border border-rim rounded-xl p-4">
+          <div className="text-2xl font-bold font-mono text-amber-400">{open.length}</div>
+          <div className="text-xs text-ink-faint mt-1">未決済</div>
+        </div>
+        <div className="bg-panel border border-rim rounded-xl p-4">
+          <div className="text-2xl font-bold font-mono text-ink">{closed.length}</div>
+          <div className="text-xs text-ink-faint mt-1">決済済み</div>
+        </div>
+        <div className="bg-panel border border-rim rounded-xl p-4">
+          <div className={`text-2xl font-bold font-mono ${totalWinRate !== null ? (totalWinRate >= 50 ? 'text-green-400' : 'text-red-400') : 'text-ink-dim'}`}>
+            {totalWinRate !== null ? `${totalWinRate.toFixed(0)}%` : '—'}
+          </div>
+          <div className="text-xs text-ink-faint mt-1">勝率</div>
+        </div>
+        <div className="bg-panel border border-rim rounded-xl p-4">
+          <div className={`text-2xl font-bold font-mono ${avgNetPnl !== null ? (avgNetPnl >= 0 ? 'text-green-400' : 'text-red-400') : 'text-ink-dim'}`}>
+            {avgNetPnl !== null ? `${avgNetPnl >= 0 ? '+' : ''}${avgNetPnl.toFixed(1)}%` : '—'}
+          </div>
+          <div className="text-xs text-ink-faint mt-1">平均純PnL</div>
+        </div>
+      </div>
+
+      {/* Sub-tabs */}
+      <div className="flex gap-2">
+        {(['stats', 'open', 'closed'] as const).map((k) => (
+          <button key={k} onClick={() => setSubTab(k)}
+            className={`px-4 py-2 rounded-xl text-sm font-medium border transition-colors ${
+              subTab === k ? 'bg-amber-500 border-amber-400 text-white' : 'bg-panel border-rim text-ink-dim hover:text-ink hover:bg-panel-raised'
+            }`}>
+            {k === 'stats' ? 'パターン比較' : k === 'open' ? `未決済 (${open.length})` : `決済済み (${closed.length})`}
+          </button>
+        ))}
+      </div>
+
+      {/* Pattern comparison */}
+      {subTab === 'stats' && (
+        <div className="bg-panel rounded-xl border border-rim overflow-hidden">
+          <div className="px-5 py-3.5 border-b border-rim bg-panel-raised">
+            <h3 className="text-sm font-semibold text-ink">パターン別成績</h3>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="text-ink-faint text-left border-b border-rim">
+                  <th className="px-4 py-2.5 font-medium">パターン</th>
+                  <th className="px-3 py-2.5 font-medium">エントリー</th>
+                  <th className="px-3 py-2.5 font-medium">SL/TP</th>
+                  <th className="px-3 py-2.5 text-right font-medium">試行</th>
+                  <th className="px-3 py-2.5 text-right font-medium">勝率</th>
+                  <th className="px-3 py-2.5 text-right font-medium">平均PnL</th>
+                  <th className="px-4 py-2.5 text-right font-medium">清算</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-rim">
+                {ALL_PATTERNS.map((p) => {
+                  const spec = PATTERN_SPECS[p]
+                  const s    = stats[p]
+                  const wr   = s && s.total > 0 ? s.wins / s.total * 100 : null
+                  const avg  = s && s.total > 0 ? s.totalPnl / s.total : null
+                  return (
+                    <tr key={p} className="hover:bg-panel-raised transition-colors">
+                      <td className="px-4 py-2.5 font-mono font-bold text-amber-400">{p}</td>
+                      <td className="px-3 py-2.5 text-ink-dim text-xs">{spec.entryStyle === 'B' ? '分割' : '一括'}</td>
+                      <td className="px-3 py-2.5 text-xs text-ink-dim">
+                        SL{spec.slPct}%/TP{spec.tpPct}%
+                        {spec.tp1Pct ? ` (TP1 ${spec.tp1Pct}%)` : ''}
+                      </td>
+                      <td className="px-3 py-2.5 text-right text-ink-dim">{s?.total ?? 0}</td>
+                      <td className={`px-3 py-2.5 text-right font-mono ${wr !== null ? (wr >= 50 ? 'text-green-400' : 'text-red-400') : 'text-ink-dim'}`}>
+                        {wr !== null ? `${wr.toFixed(0)}%` : '—'}
+                      </td>
+                      <td className={`px-3 py-2.5 text-right font-mono ${avg !== null ? (avg >= 0 ? 'text-green-400' : 'text-red-400') : 'text-ink-dim'}`}>
+                        {avg !== null ? `${avg >= 0 ? '+' : ''}${avg.toFixed(1)}%` : '—'}
+                      </td>
+                      <td className="px-4 py-2.5 text-right font-mono text-red-400">
+                        {s?.liquidations ?? 0}
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* Open positions */}
+      {subTab === 'open' && (
+        <div className="bg-panel rounded-xl border border-rim overflow-hidden">
+          {open.length === 0 ? (
+            <div className="px-6 py-10 text-center text-ink-faint text-sm">未決済ポジションなし</div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="text-ink-faint text-left border-b border-rim">
+                    <th className="px-4 py-2.5 font-medium">銘柄</th>
+                    <th className="px-3 py-2.5 font-medium">PT</th>
+                    <th className="px-3 py-2.5 text-right font-medium">エントリー</th>
+                    <th className="px-3 py-2.5 text-right font-medium">現在価格</th>
+                    <th className="px-3 py-2.5 text-right font-medium">ライブPnL</th>
+                    <th className="px-4 py-2.5 text-right font-medium">証拠金維持率</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-rim">
+                  {open.map((t) => {
+                    const cur = prices[t.symbol] ?? null
+                    const liveGross = cur ? grossPnlPct(t.avgEntryPrice, cur, t.leverage) : null
+                    const liveCost  = roundTripCostPct(t.leverage)
+                    const livePnl   = liveGross !== null ? liveGross - liveCost + t.totalFRPct : null
+                    // Margin ratio: remaining equity / initial capital
+                    const marginRatio = cur
+                      ? Math.max(0, 100 + (liveGross ?? 0))
+                      : null
+                    return (
+                      <tr key={t.id} className="hover:bg-panel-raised transition-colors">
+                        <td className="px-4 py-2.5">
+                          <div className="font-mono text-sm text-ink">{t.symbol}</div>
+                          <div className="text-xs text-ink-faint mt-0.5">{new Date(t.lot1Time).toLocaleString('ja-JP', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })}</div>
+                        </td>
+                        <td className="px-3 py-2.5 font-mono font-bold text-amber-400 text-sm">{t.pattern}</td>
+                        <td className="px-3 py-2.5 text-right font-mono text-ink-dim text-sm">{fmtPrice(t.avgEntryPrice)}</td>
+                        <td className="px-3 py-2.5 text-right font-mono text-sm">
+                          {cur ? fmtPrice(cur) : <span className="text-ink-faint">—</span>}
+                          {t.status === 'pending_lot2' && <span className="ml-1 text-[10px] text-amber-400">lot2待ち</span>}
+                        </td>
+                        <td className={`px-3 py-2.5 text-right font-mono text-sm font-medium ${livePnl !== null ? (livePnl >= 0 ? 'text-green-400' : 'text-red-400') : 'text-ink-faint'}`}>
+                          {livePnl !== null ? `${livePnl >= 0 ? '+' : ''}${livePnl.toFixed(1)}%` : '—'}
+                        </td>
+                        <td className={`px-4 py-2.5 text-right font-mono text-sm ${marginRatio !== null ? (marginRatio < 20 ? 'text-red-400 font-bold' : marginRatio < 50 ? 'text-amber-400' : 'text-green-400') : 'text-ink-faint'}`}>
+                          {marginRatio !== null ? `${marginRatio.toFixed(0)}%` : '—'}
+                        </td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Closed positions */}
+      {subTab === 'closed' && (
+        <div className="bg-panel rounded-xl border border-rim overflow-hidden">
+          {closed.length === 0 ? (
+            <div className="px-6 py-10 text-center text-ink-faint text-sm">決済済みなし</div>
+          ) : (
+            <div className="overflow-x-auto max-h-[500px] overflow-y-auto">
+              <table className="w-full text-sm">
+                <thead className="sticky top-0 bg-panel-raised z-10">
+                  <tr className="text-ink-faint text-left border-b border-rim">
+                    <th className="px-4 py-2.5 font-medium">銘柄</th>
+                    <th className="px-3 py-2.5 font-medium">PT</th>
+                    <th className="px-3 py-2.5 text-right font-medium">エントリー</th>
+                    <th className="px-3 py-2.5 text-right font-medium">決済</th>
+                    <th className="px-3 py-2.5 text-center font-medium">理由</th>
+                    <th className="px-3 py-2.5 text-right font-medium">純PnL</th>
+                    <th className="px-4 py-2.5 text-right font-medium">USDT</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-rim">
+                  {closed.map((t) => {
+                    const pnl = t.netPnlPct ?? 0
+                    const icon = t.exitReason === 'tp' ? '✅' : t.exitReason === 'liquidation' ? '💥' : '🛑'
+                    return (
+                      <tr key={t.id} className={`transition-colors ${pnl >= 0 ? 'bg-green-950/10 hover:bg-green-950/20' : 'bg-red-950/10 hover:bg-red-950/20'}`}>
+                        <td className="px-4 py-2 font-mono text-sm text-ink">{t.symbol}</td>
+                        <td className="px-3 py-2 font-mono font-bold text-amber-400 text-sm">{t.pattern}</td>
+                        <td className="px-3 py-2 text-right font-mono text-ink-dim text-xs">{fmtPrice(t.avgEntryPrice)}</td>
+                        <td className="px-3 py-2 text-right font-mono text-ink-dim text-xs">{t.exitPrice ? fmtPrice(t.exitPrice) : '—'}</td>
+                        <td className="px-3 py-2 text-center text-sm">{icon}</td>
+                        <td className={`px-3 py-2 text-right font-mono font-medium text-sm ${pnl >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                          {pnl >= 0 ? '+' : ''}{pnl.toFixed(1)}%
+                        </td>
+                        <td className={`px-4 py-2 text-right font-mono text-xs ${(t.netPnlUsdt ?? 0) >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                          {t.netPnlUsdt !== null ? `${t.netPnlUsdt >= 0 ? '+' : ''}${t.netPnlUsdt.toFixed(0)}` : '—'}
+                        </td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ── Real Trades ───────────────────────────────────────────────────────────────
 export default function TradesPage() {
+  const [mode, setMode]         = useState<'real' | 'paper'>('real')
   const [trades, setTrades]     = useState<Trade[]>([])
   const [loading, setLoading]   = useState(true)
   const [error, setError]       = useState<string | null>(null)
@@ -358,10 +636,31 @@ export default function TradesPage() {
     <div className="min-h-screen p-6">
       <div className="max-w-5xl mx-auto">
 
-        <div className="mb-6">
-          <h1 className="text-2xl font-bold text-ink">マイトレード</h1>
-          <p className="text-ink-dim text-sm mt-1">記録したショートエントリーの管理・損益確認</p>
+        <div className="mb-6 flex items-start justify-between">
+          <div>
+            <h1 className="text-2xl font-bold text-ink">マイトレード</h1>
+            <p className="text-ink-dim text-sm mt-1">記録したショートエントリーの管理・損益確認</p>
+          </div>
+          {/* Mode switcher */}
+          <div className="flex gap-1 bg-panel border border-rim rounded-xl p-1">
+            <button
+              onClick={() => setMode('real')}
+              className={`px-4 py-1.5 rounded-lg text-sm font-medium transition-colors ${mode === 'real' ? 'bg-amber-500 text-white' : 'text-ink-dim hover:text-ink'}`}
+            >
+              実弾
+            </button>
+            <button
+              onClick={() => setMode('paper')}
+              className={`px-4 py-1.5 rounded-lg text-sm font-medium transition-colors ${mode === 'paper' ? 'bg-amber-500 text-white' : 'text-ink-dim hover:text-ink'}`}
+            >
+              ペーパー
+            </button>
+          </div>
         </div>
+
+        {mode === 'paper' && <PaperTradesView />}
+
+        {mode === 'real' && <>
 
         {/* Stats cards */}
         {trades.length > 0 && (
@@ -463,6 +762,8 @@ export default function TradesPage() {
             </div>
           </div>
         )}
+
+        </>}
 
       </div>
 

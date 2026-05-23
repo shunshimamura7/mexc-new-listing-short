@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { computeScores } from '@/lib/score'
 import { sendTelegramAlert } from '@/lib/telegram'
 import { wasRecentlyNotified, markNotified } from '@/lib/notified'
+import { runPaperAutoEntry } from '@/lib/paper-auto-entry'
 
 export const dynamic = 'force-dynamic'
 
@@ -23,8 +24,24 @@ export async function GET() {
     }
 
     if (newAlerts.length > 0) {
-      // レスポンスをブロックしない
       sendTelegramAlert(newAlerts).catch(() => {})
+    }
+
+    // ペーパートレード自動エントリー（推奨対象 × スイートスポット24〜48h のみ）
+    for (const r of data.results) {
+      if (
+        r.elapsedCategory === 'sweet' &&
+        (r.recommendation === 'short' || r.recommendation === 'consider')
+      ) {
+        runPaperAutoEntry({
+          symbol:       r.symbol,
+          currentPrice: r.currentPrice,
+          score:        r.score,
+          pumpPct:      r.initialPumpPct,
+          snapshotFR:   r.fundingRate,
+          elapsedHours: r.elapsedHours,
+        }).catch(() => {})
+      }
     }
 
     return NextResponse.json({ success: true, ...data })

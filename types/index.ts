@@ -163,6 +163,73 @@ export type GridsearchLatestData = {
   savedAt: number
 }
 
+// ── Paper Trade ───────────────────────────────────────────────────────────────
+export type PatternName = 'A1' | 'A2' | 'A3' | 'A4' | 'B1' | 'B2' | 'B3' | 'B4'
+export type PaperTradeStatus = 'pending_lot2' | 'open' | 'closed'
+export type PaperExitReason  = 'tp' | 'sl' | 'liquidation'
+
+export type PaperTrade = {
+  id:         string
+  symbol:     string
+  sessionId:  string          // symbol + daily bucket — dedup key
+  pattern:    PatternName
+  leverage:   number
+  capitalUsdt: number         // virtual capital per pattern (USDT)
+
+  // Lot 1 (always)
+  lot1Price: number
+  lot1Time:  string           // ISO
+  // Lot 2 (B-style only; entered 2 h after lot1)
+  lot2Price:         number | null
+  lot2Time:          string | null
+  lot2ScheduledTime: string | null
+
+  avgEntryPrice: number       // lot1Price for A; (lot1+lot2)/2 for B after lot2
+
+  // Exit levels (all based on lot1Price)
+  slPct:  number
+  tpPct:  number
+  tp1Pct: number | null       // pattern 2: first partial TP (10 %)
+  slPrice:          number
+  tpPrice:          number
+  tp1Price:         number | null
+  liquidationPrice: number
+
+  status: PaperTradeStatus
+
+  // Pattern 2 partial close
+  tp1Closed:     boolean
+  tp1CloseTime:  string | null
+  tp1ClosePrice: number | null
+
+  // Accumulated
+  totalFRPct: number          // total FR benefit as % of capital (positive = received)
+  lastFRTime: string | null   // ISO
+
+  // Close
+  exitPrice:   number | null
+  exitTime:    string | null
+  exitReason:  PaperExitReason | null
+  netPnlPct:   number | null
+  netPnlUsdt:  number | null
+
+  // Snapshot at entry
+  pumpPct:    number
+  score:      number
+  snapshotFR: number
+
+  createdAt: string
+  updatedAt: string
+}
+
+export type PaperSettings = {
+  autoEntry:   boolean
+  capitalUsdt: number
+  leverage:    number
+  slippage:    number    // % round-trip total (default 0.20)
+}
+
+// ── Real Trade ────────────────────────────────────────────────────────────────
 export type TradeStatus = 'open' | 'closed_tp' | 'closed_sl' | 'closed_manual'
 
 export type Trade = {
