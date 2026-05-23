@@ -6,7 +6,7 @@ import type { Kline, ListingData } from '@/types'
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms))
 
 // ── Cron用 GET ──────────────────────────────────────────────────────────
-// Vercel Cron から毎日 UTC 0:00（JST 9:00）に呼ばれる
+// cron-job.org から6時間ごと（UTC 0/6/12/18:00）に呼ばれる
 // Authorization: Bearer {CRON_SECRET} で保護
 export async function GET(req: NextRequest) {
   const secret = process.env.CRON_SECRET
