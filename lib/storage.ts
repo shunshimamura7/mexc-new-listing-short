@@ -1,8 +1,10 @@
 import type { ListingData, GridsearchLatestData, Trade } from '@/types'
 
-// Vercel 上（VERCEL=1）または KV_REST_API_URL が設定されている場合は KV を使う
-// ローカル開発時のみ fs にフォールバック
-const IS_KV = !!process.env.KV_REST_API_URL || process.env.VERCEL === '1'
+// KV_REST_API_URL が設定されている場合のみ Vercel KV を使う
+// Vercel 上で KV 未設定の場合は空データを返す（fs 書き込みは不可）
+// ローカル開発時は fs にフォールバック
+const IS_KV     = !!process.env.KV_REST_API_URL
+const IS_VERCEL = process.env.VERCEL === '1'
 
 // ===== Vercel KV 実装 =====
 // キー設計:
@@ -65,6 +67,7 @@ function fsImpl() {
 // ===== 公開 API =====
 export async function saveListing(data: ListingData): Promise<void> {
   if (IS_KV) return kvSaveListing(data)
+  if (IS_VERCEL) return  // KV 未設定の本番環境では書き込み不可
   const { fs, ensure, fp } = fsImpl()
   ensure()
   fs.writeFileSync(fp(data.symbol), JSON.stringify(data, null, 2), 'utf-8')
@@ -72,6 +75,7 @@ export async function saveListing(data: ListingData): Promise<void> {
 
 export async function loadListing(symbol: string): Promise<ListingData | null> {
   if (IS_KV) return kvLoadListing(symbol)
+  if (IS_VERCEL) return null
   const { fs, ensure, fp } = fsImpl()
   ensure()
   const p = fp(symbol)
@@ -81,6 +85,7 @@ export async function loadListing(symbol: string): Promise<ListingData | null> {
 
 export async function loadAllListings(): Promise<ListingData[]> {
   if (IS_KV) return kvLoadAll()
+  if (IS_VERCEL) return []
   const { fs, path, DATA_DIR, ensure } = fsImpl()
   ensure()
   return fs
@@ -91,6 +96,7 @@ export async function loadAllListings(): Promise<ListingData[]> {
 
 export async function listSymbols(): Promise<string[]> {
   if (IS_KV) return kvListSymbols()
+  if (IS_VERCEL) return []
   const { fs, DATA_DIR, ensure } = fsImpl()
   ensure()
   return fs
@@ -101,6 +107,7 @@ export async function listSymbols(): Promise<string[]> {
 
 export async function deleteListing(symbol: string): Promise<void> {
   if (IS_KV) return kvDeleteListing(symbol)
+  if (IS_VERCEL) return
   const { fs, ensure, fp } = fsImpl()
   ensure()
   const p = fp(symbol)
@@ -109,6 +116,7 @@ export async function deleteListing(symbol: string): Promise<void> {
 
 export async function deleteAll(): Promise<void> {
   if (IS_KV) return kvDeleteAll()
+  if (IS_VERCEL) return
   const { fs, path, DATA_DIR, ensure } = fsImpl()
   ensure()
   for (const f of fs.readdirSync(DATA_DIR).filter((f: string) => f.endsWith('.json'))) {
@@ -122,6 +130,7 @@ export async function saveGridsearchLatest(data: GridsearchLatestData): Promise<
     await kv.set('gridsearch:latest', data)
     return
   }
+  if (IS_VERCEL) return
   const { fs, ensure, fp } = fsImpl()
   ensure()
   fs.writeFileSync(fp('gridsearch-latest'), JSON.stringify(data, null, 2), 'utf-8')
@@ -132,6 +141,7 @@ export async function loadGridsearchLatest(): Promise<GridsearchLatestData | nul
     const { kv } = await import('@vercel/kv')
     return kv.get<GridsearchLatestData>('gridsearch:latest')
   }
+  if (IS_VERCEL) return null
   const { fs, ensure, fp } = fsImpl()
   ensure()
   const p = fp('gridsearch-latest')
@@ -152,6 +162,7 @@ async function kvSaveTrades(trades: Trade[]): Promise<void> {
 
 export async function getAllTrades(): Promise<Trade[]> {
   if (IS_KV) return kvLoadTrades()
+  if (IS_VERCEL) return []
   const { fs, ensure, fp } = fsImpl()
   ensure()
   const p = fp('trades')
@@ -163,6 +174,7 @@ export async function createTrade(trade: Trade): Promise<void> {
   const trades = await getAllTrades()
   trades.push(trade)
   if (IS_KV) { await kvSaveTrades(trades); return }
+  if (IS_VERCEL) return
   const { fs, ensure, fp } = fsImpl()
   ensure()
   fs.writeFileSync(fp('trades'), JSON.stringify(trades, null, 2), 'utf-8')
@@ -174,6 +186,7 @@ export async function updateTrade(id: string, patch: Partial<Trade>): Promise<Tr
   if (idx === -1) return null
   trades[idx] = { ...trades[idx], ...patch }
   if (IS_KV) { await kvSaveTrades(trades); return trades[idx] }
+  if (IS_VERCEL) return trades[idx]
   const { fs, ensure, fp } = fsImpl()
   ensure()
   fs.writeFileSync(fp('trades'), JSON.stringify(trades, null, 2), 'utf-8')
@@ -185,6 +198,7 @@ export async function deleteTrade(id: string): Promise<boolean> {
   const next = trades.filter((t) => t.id !== id)
   if (next.length === trades.length) return false
   if (IS_KV) { await kvSaveTrades(next); return true }
+  if (IS_VERCEL) return true
   const { fs, ensure, fp } = fsImpl()
   ensure()
   fs.writeFileSync(fp('trades'), JSON.stringify(next, null, 2), 'utf-8')
@@ -197,6 +211,7 @@ export async function storageStats(): Promise<{ count: number; bytes: number }> 
     const count = await kv.scard('listings:symbols')
     return { count: count ?? 0, bytes: 0 }
   }
+  if (IS_VERCEL) return { count: 0, bytes: 0 }
   const { fs, path, DATA_DIR, ensure } = fsImpl()
   ensure()
   const files = fs
