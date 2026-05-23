@@ -1,7 +1,8 @@
 import type { ListingData, GridsearchLatestData, Trade } from '@/types'
 
-// KV_REST_API_URL が設定されていれば Vercel KV を使う。なければローカル fs にフォールバック
-const IS_KV = !!process.env.KV_REST_API_URL
+// Vercel 上（VERCEL=1）または KV_REST_API_URL が設定されている場合は KV を使う
+// ローカル開発時のみ fs にフォールバック
+const IS_KV = !!process.env.KV_REST_API_URL || process.env.VERCEL === '1'
 
 // ===== Vercel KV 実装 =====
 // キー設計:
