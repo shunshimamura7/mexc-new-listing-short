@@ -24,7 +24,7 @@ function pnlColor(pnl: number | null): string {
 }
 
 function statusBadge(status: TradeStatus) {
-  if (status === 'open')          return <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-blue-500/15 text-blue-400">未決済</span>
+  if (status === 'open')          return <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-amber-500/15 text-amber-400">未決済</span>
   if (status === 'closed_tp')     return <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-green-500/15 text-green-400">TP決済</span>
   if (status === 'closed_sl')     return <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-red-500/15 text-red-400">SL決済</span>
   return                                 <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-panel-raised text-ink-faint border border-rim">手動決済</span>
@@ -118,7 +118,7 @@ function ExitModal({
 
         {currentPrice && (
           <div className="text-xs text-ink-faint mb-3 flex items-center gap-1.5">
-            <span className="w-1.5 h-1.5 rounded-full bg-blue-400 animate-pulse" />
+            <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse" />
             現在価格: <span className="font-mono text-ink">{formatPrice(currentPrice)}</span>
           </div>
         )}
@@ -133,7 +133,7 @@ function ExitModal({
               value={exitPriceStr}
               onChange={(e) => setExitPriceStr(e.target.value)}
               placeholder="決済価格を入力"
-              className="w-full bg-panel-raised border border-rim rounded-lg px-3 py-2 text-sm text-ink placeholder:text-ink-faint focus:outline-none focus:border-blue-500/50"
+              className="w-full bg-panel-raised border border-rim rounded-lg px-3 py-2 text-sm text-ink placeholder:text-ink-faint focus:outline-none focus:border-amber-500/50"
               autoFocus
             />
           </div>
@@ -155,7 +155,7 @@ function ExitModal({
             <button type="button" onClick={onClose} className="flex-1 px-4 py-2 rounded-lg bg-panel-raised border border-rim text-sm text-ink-dim hover:text-ink transition-colors">
               キャンセル
             </button>
-            <button type="submit" disabled={saving} className="flex-1 px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-500 disabled:bg-panel-raised disabled:text-ink-faint disabled:cursor-not-allowed text-sm font-medium text-white transition-colors">
+            <button type="submit" disabled={saving} className="flex-1 px-4 py-2 rounded-lg bg-amber-500 hover:bg-amber-400 disabled:bg-panel-raised disabled:text-ink-faint disabled:cursor-not-allowed text-sm font-medium text-white transition-colors">
               {saving ? '記録中...' : '決済確定'}
             </button>
           </div>
@@ -247,7 +247,7 @@ function TradeRow({
           {isOpen && (
             <button
               onClick={() => onExit(trade)}
-              className="px-3 py-1 rounded-lg bg-panel-raised border border-rim text-xs text-ink-dim hover:text-ink hover:border-blue-500/40 transition-colors"
+              className="px-3 py-1 rounded-lg bg-panel-raised border border-rim text-xs text-ink-dim hover:text-ink hover:border-amber-500/40 transition-colors"
             >
               決済
             </button>
@@ -367,7 +367,7 @@ export default function TradesPage() {
         {trades.length > 0 && (
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6">
             <div className="bg-panel border border-rim rounded-xl p-4">
-              <div className="text-2xl font-bold font-mono text-blue-400">{openTrades.length}</div>
+              <div className="text-2xl font-bold font-mono text-amber-400">{openTrades.length}</div>
               <div className="text-xs text-ink-faint mt-1">未決済</div>
             </div>
             <div className="bg-panel border border-rim rounded-xl p-4">
@@ -410,7 +410,7 @@ export default function TradesPage() {
               onClick={() => setTab(key)}
               className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium transition-colors border ${
                 tab === key
-                  ? 'bg-blue-600 border-blue-500 text-white'
+                  ? 'bg-amber-500 border-amber-400 text-white'
                   : 'bg-panel border-rim text-ink-dim hover:text-ink hover:bg-panel-raised'
               }`}
             >

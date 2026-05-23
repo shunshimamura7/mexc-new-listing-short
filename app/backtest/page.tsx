@@ -60,7 +60,7 @@ function TradeTable({ trades }: { trades: TradeResult[] }) {
               className={`border-b border-rim ${t.pnlPct >= 0 ? 'bg-green-950/20' : 'bg-red-950/20'}`}
             >
               <td className="py-1 pr-3 font-mono">
-                <Link href={`/coin/${t.symbol}`} className="text-ink-dim hover:text-blue-400 transition-colors">
+                <Link href={`/coin/${t.symbol}`} className="text-ink-dim hover:text-amber-400 transition-colors">
                   {t.symbol}
                 </Link>
               </td>
@@ -142,7 +142,7 @@ function HeatmapGrid({ cells, activeSl, activeTp }: {
           <tr>
             <th className="text-ink-faint text-right pr-2 pb-1 font-normal">SL↓TP→</th>
             {TP_RANGE.map((tp) => (
-              <th key={tp} className={`text-center pb-1 font-normal w-10 ${tp === activeTp ? 'text-blue-400 font-semibold' : 'text-ink-faint'}`}>
+              <th key={tp} className={`text-center pb-1 font-normal w-10 ${tp === activeTp ? 'text-amber-400 font-semibold' : 'text-ink-faint'}`}>
                 {tp}%
               </th>
             ))}
@@ -151,7 +151,7 @@ function HeatmapGrid({ cells, activeSl, activeTp }: {
         <tbody>
           {SL_RANGE.map((sl) => (
             <tr key={sl}>
-              <td className={`text-right pr-2 py-0.5 font-normal ${sl === activeSl ? 'text-blue-400 font-semibold' : 'text-ink-faint'}`}>
+              <td className={`text-right pr-2 py-0.5 font-normal ${sl === activeSl ? 'text-amber-400 font-semibold' : 'text-ink-faint'}`}>
                 {sl}%
               </td>
               {TP_RANGE.map((tp) => {
@@ -167,7 +167,7 @@ function HeatmapGrid({ cells, activeSl, activeTp }: {
                       style={bgColor ? { backgroundColor: bgColor } : undefined}
                       className={`w-10 h-7 flex items-center justify-center rounded text-center font-mono
                         ${!bgColor ? 'bg-panel-raised text-ink-faint' : 'text-white'}
-                        ${isActive ? 'ring-2 ring-blue-400 z-10 relative' : ''}`}
+                        ${isActive ? 'ring-2 ring-amber-400 z-10 relative' : ''}`}
                     >
                       {cnt > 0 ? `${Math.round(wr)}` : '—'}
                     </div>
@@ -196,7 +196,7 @@ function SliderField({ label, value, min, max, step = 1, unit = '', onChange, di
         type="range" min={min} max={max} step={step} value={value}
         onChange={(e) => onChange(Number(e.target.value))}
         disabled={disabled}
-        className="w-full accent-blue-500"
+        className="w-full accent-amber-500"
       />
     </div>
   )
@@ -419,7 +419,7 @@ export default function BacktestPage() {
             <div className="space-y-2">
               <p className="text-xs text-ink-faint uppercase tracking-wide">銘柄タイプ</p>
               <label className="flex items-center gap-2 cursor-pointer select-none">
-                <input type="checkbox" checked={excludeStock} disabled={loading} onChange={(e) => handleExcludeStock(e.target.checked)} className="w-4 h-4 accent-blue-500" />
+                <input type="checkbox" checked={excludeStock} disabled={loading} onChange={(e) => handleExcludeStock(e.target.checked)} className="w-4 h-4 accent-amber-500" />
                 <span className="text-sm text-ink-dim">STOCK銘柄を除外</span>
               </label>
               <label className="flex items-center gap-2 cursor-pointer select-none">
@@ -430,20 +430,20 @@ export default function BacktestPage() {
             <div className="border-t border-rim pt-3 space-y-4">
               <p className="text-xs text-ink-faint uppercase tracking-wide">数値フィルター</p>
               <SliderField label="初動ポンプ幅 以上" value={minPumpPct} min={0} max={200} step={10} unit="%" onChange={setMinPumpPct} disabled={loading} />
-              <p className="text-xs text-blue-400/80 -mt-2">pattern_bible v0.4 確定条件: 50%以上</p>
+              <p className="text-xs text-amber-400/80 -mt-2">pattern_bible v0.4 確定条件: 50%以上</p>
               <div className="opacity-40">
                 <div className="flex justify-between text-sm mb-1">
                   <span className="text-ink-dim">FDV/MC 以上</span>
                   <span className="text-ink-faint text-xs">データなし</span>
                 </div>
-                <input type="range" min={0} max={20} value={0} disabled className="w-full accent-blue-500 cursor-not-allowed" />
+                <input type="range" min={0} max={20} value={0} disabled className="w-full accent-amber-500 cursor-not-allowed" />
               </div>
               <div>
                 <div className="flex justify-between text-sm mb-1">
                   <span className="text-ink-dim">|FR| 以上</span>
                   <span className="text-ink font-mono">{minFR.toFixed(2)}%</span>
                 </div>
-                <input type="range" min={0} max={0.5} step={0.01} value={minFR} onChange={(e) => setMinFR(Number(e.target.value))} disabled={loading} className="w-full accent-blue-500" />
+                <input type="range" min={0} max={0.5} step={0.01} value={minFR} onChange={(e) => setMinFR(Number(e.target.value))} disabled={loading} className="w-full accent-amber-500" />
                 <p className="text-xs text-ink-faint mt-1">収集時スナップショット値</p>
               </div>
             </div>
@@ -455,14 +455,14 @@ export default function BacktestPage() {
             <button
               onClick={handleRun}
               disabled={loading || gsLoading}
-              className="w-full py-2.5 bg-blue-600 hover:bg-blue-500 disabled:bg-panel-raised disabled:text-ink-faint disabled:cursor-not-allowed rounded-lg font-medium transition-colors text-white mb-2"
+              className="w-full py-2.5 bg-amber-500 hover:bg-amber-400 disabled:bg-panel-raised disabled:text-ink-faint disabled:cursor-not-allowed rounded-lg font-medium transition-colors text-white mb-2"
             >
               {loading ? '計算中...' : 'バックテスト実行'}
             </button>
             <button
               onClick={handleGridSearch}
               disabled={loading || gsLoading}
-              className="w-full py-2.5 bg-emerald-700 hover:bg-emerald-600 disabled:bg-panel-raised disabled:text-ink-faint disabled:cursor-not-allowed rounded-lg font-medium transition-colors text-white mb-5"
+              className="w-full py-2.5 bg-amber-600 hover:bg-amber-500 disabled:bg-panel-raised disabled:text-ink-faint disabled:cursor-not-allowed rounded-lg font-medium transition-colors text-white mb-5"
             >
               {gsLoading ? 'グリッドサーチ中...' : 'グリッドサーチ実行'}
             </button>
@@ -528,12 +528,12 @@ export default function BacktestPage() {
                     }}
                   />
                   <ReferenceLine y={50} stroke="var(--c-ink-faint)" strokeDasharray="4 4" />
-                  <Line type="monotone" dataKey="winRate" stroke="#3b82f6" strokeWidth={2} dot={{ r: 3, fill: '#3b82f6' }} name="winRate" />
+                  <Line type="monotone" dataKey="winRate" stroke="#f59e0b" strokeWidth={2} dot={{ r: 3, fill: '#f59e0b' }} name="winRate" />
                   <Line type="monotone" dataKey="avgPnl"  stroke="#22c55e" strokeWidth={2} dot={{ r: 3, fill: '#22c55e' }} strokeDasharray="4 4" name="avgPnl" />
                 </LineChart>
               </ResponsiveContainer>
               <div className="flex gap-4 mt-2 text-xs text-ink-faint">
-                <span className="flex items-center gap-1"><span className="w-4 h-0.5 bg-blue-500 inline-block" /> 勝率 (%)</span>
+                <span className="flex items-center gap-1"><span className="w-4 h-0.5 bg-amber-500 inline-block" /> 勝率 (%)</span>
                 <span className="flex items-center gap-1"><span className="w-4 h-0.5 bg-green-500 inline-block" /> 平均PnL (%)</span>
               </div>
             </div>
@@ -562,7 +562,7 @@ export default function BacktestPage() {
                     {(summary!.trades as TradeResult[]).map((t, i) => (
                       <tr key={i} className={`transition-colors ${t.pnlPct >= 0 ? 'bg-green-950/10 hover:bg-green-950/20' : 'bg-red-950/10 hover:bg-red-950/20'}`}>
                         <td className="px-5 py-2 font-mono">
-                          <Link href={`/coin/${t.symbol}`} className="text-ink hover:text-blue-400 transition-colors">
+                          <Link href={`/coin/${t.symbol}`} className="text-ink hover:text-amber-400 transition-colors">
                             {t.symbol}
                           </Link>
                         </td>
@@ -610,7 +610,7 @@ export default function BacktestPage() {
                     <button
                       key={key}
                       onClick={() => setGsSortBy(key)}
-                      className={`px-3 py-1 rounded-lg transition-colors ${gsSortBy === key ? 'bg-emerald-700 text-white' : 'bg-panel-raised text-ink-dim hover:text-ink'}`}
+                      className={`px-3 py-1 rounded-lg transition-colors ${gsSortBy === key ? 'bg-amber-600 text-white' : 'bg-panel-raised text-ink-dim hover:text-ink'}`}
                     >
                       {key === 'ev' ? '期待値' : key === 'avgPnl' ? '平均PnL' : '勝率'}
                     </button>

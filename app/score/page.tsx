@@ -119,7 +119,7 @@ function EntryModal({
               value={positionSize}
               onChange={(e) => setPositionSize(e.target.value)}
               placeholder="例: 100"
-              className="w-full bg-panel-raised border border-rim rounded-lg px-3 py-2 text-sm text-ink placeholder:text-ink-faint focus:outline-none focus:border-blue-500/50"
+              className="w-full bg-panel-raised border border-rim rounded-lg px-3 py-2 text-sm text-ink placeholder:text-ink-faint focus:outline-none focus:border-amber-500/50"
             />
           </div>
 
@@ -130,7 +130,7 @@ function EntryModal({
               onChange={(e) => setNotes(e.target.value)}
               rows={2}
               placeholder="例: 出来高枯渇が顕著"
-              className="w-full bg-panel-raised border border-rim rounded-lg px-3 py-2 text-sm text-ink placeholder:text-ink-faint focus:outline-none focus:border-blue-500/50 resize-none"
+              className="w-full bg-panel-raised border border-rim rounded-lg px-3 py-2 text-sm text-ink placeholder:text-ink-faint focus:outline-none focus:border-amber-500/50 resize-none"
             />
           </div>
 
@@ -182,7 +182,7 @@ function ScoreCard({
                                            <span className="px-2 py-0.5 rounded-full text-xs font-normal bg-panel-raised text-ink-faint">見送り</span>
 
   const elapsedBadge =
-    result.elapsedCategory === 'waiting' ? <span className="text-[10px] px-1.5 py-0.5 rounded bg-blue-500/15 text-blue-400 font-medium">待機中</span> :
+    result.elapsedCategory === 'waiting' ? <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-400 font-medium">待機中</span> :
     result.elapsedCategory === 'late'    ? <span className="text-[10px] px-1.5 py-0.5 rounded bg-ink-faint/10 text-ink-faint font-medium">48h超</span> :
     null
 
@@ -197,7 +197,7 @@ function ScoreCard({
       <div className="flex items-start justify-between gap-2">
         <div>
           <div className="flex items-center gap-1.5 flex-wrap mb-0.5">
-            <Link href={`/coin/${result.symbol}`} className="font-mono font-bold text-ink hover:text-blue-400 transition-colors">
+            <Link href={`/coin/${result.symbol}`} className="font-mono font-bold text-ink hover:text-amber-400 transition-colors">
               {result.symbol}
             </Link>
             {categoryBadge}
@@ -210,7 +210,7 @@ function ScoreCard({
         <div className="flex flex-col items-end gap-1.5 flex-shrink-0">
           <div className="flex items-center gap-1">
             {Array.from({ length: 5 }, (_, i) => (
-              <span key={i} className={`w-2.5 h-2.5 rounded-full ${i < result.score ? 'bg-blue-400' : 'bg-rim'}`} />
+              <span key={i} className={`w-2.5 h-2.5 rounded-full ${i < result.score ? 'bg-amber-400' : 'bg-rim'}`} />
             ))}
             <span className="ml-1 text-sm font-bold text-ink">{result.score}/5</span>
           </div>
@@ -223,7 +223,7 @@ function ScoreCard({
         {criteria.map(({ icon, label, passed, value }) => (
           <div key={icon} className="flex items-center justify-between text-sm">
             <div className="flex items-center gap-2">
-              <span className={`text-xs font-mono ${passed ? 'text-blue-400' : 'text-ink-faint'}`}>{icon}</span>
+              <span className={`text-xs font-mono ${passed ? 'text-amber-400' : 'text-ink-faint'}`}>{icon}</span>
               <span className={passed ? 'text-ink' : 'text-ink-faint'}>{label}</span>
             </div>
             <div className="flex items-center gap-2">
@@ -371,7 +371,7 @@ export default function ScorePage() {
               <button
                 onClick={fetchScores}
                 disabled={loading}
-                className="px-4 py-2 bg-blue-600 hover:bg-blue-500 disabled:bg-panel-raised disabled:text-ink-faint disabled:cursor-not-allowed rounded-lg text-sm font-medium transition-colors text-white"
+                className="px-4 py-2 bg-amber-500 hover:bg-amber-400 disabled:bg-panel-raised disabled:text-ink-faint disabled:cursor-not-allowed rounded-lg text-sm font-medium transition-colors text-white"
               >
                 {loading ? '取得中...' : '今すぐ更新'}
               </button>
@@ -399,7 +399,7 @@ export default function ScorePage() {
             <div className="bg-panel border border-rim rounded-xl px-5 py-3.5 mb-4 flex flex-wrap items-center gap-5">
               <span className="text-xs text-ink-faint font-medium uppercase tracking-wide">表示フィルター</span>
               <label className="flex items-center gap-2 cursor-default select-none">
-                <input type="checkbox" checked readOnly className="w-4 h-4 accent-blue-500" />
+                <input type="checkbox" checked readOnly className="w-4 h-4 accent-amber-500" />
                 <span className="text-sm text-ink-dim">暗号通貨</span>
               </label>
               <label className="flex items-center gap-2 cursor-pointer select-none">
@@ -420,7 +420,7 @@ export default function ScorePage() {
                   onClick={() => setActiveTab(key)}
                   className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium transition-colors border ${
                     activeTab === key
-                      ? 'bg-blue-600 border-blue-500 text-white'
+                      ? 'bg-amber-500 border-amber-400 text-white'
                       : 'bg-panel border-rim text-ink-dim hover:text-ink hover:bg-panel-raised'
                   }`}
                 >

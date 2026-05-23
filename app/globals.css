@@ -2,13 +2,13 @@
 
 /* ── Semantic color tokens ───────────────────────────────── */
 :root {
-  --c-surface:      #0f1117;
-  --c-panel:        #1a1f2e;
-  --c-panel-raised: #232b3e;
-  --c-rim:          #2d3748;
-  --c-ink:          #f1f5f9;
+  --c-surface:      #0a0e1a;
+  --c-panel:        #0d1220;
+  --c-panel-raised: #111827;
+  --c-rim:          #1e2d4a;
+  --c-ink:          #f8fafc;
   --c-ink-dim:      #94a3b8;
-  --c-ink-faint:    #64748b;
+  --c-ink-faint:    #475569;
 }
 
 html.light {

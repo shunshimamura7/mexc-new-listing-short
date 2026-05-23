@@ -19,7 +19,7 @@ export default async function HomePage() {
         {/* Stats */}
         <div className="grid grid-cols-2 gap-4 mb-6">
           <div className="bg-panel rounded-xl p-5 border border-rim">
-            <div className="text-3xl font-bold text-blue-400 font-mono">{stats.count}</div>
+            <div className="text-3xl font-bold text-amber-400 font-mono">{stats.count}</div>
             <div className="text-sm text-ink-dim mt-1">収集済み銘柄数</div>
           </div>
           <div className="bg-panel rounded-xl p-5 border border-rim">
@@ -48,16 +48,16 @@ export default async function HomePage() {
 
           <Link
             href="/collect"
-            className="group bg-panel border border-rim rounded-xl p-6 hover:border-blue-500/40 hover:bg-panel-raised transition-all block"
+            className="group bg-panel border border-rim rounded-xl p-6 hover:border-amber-500/40 hover:bg-panel-raised transition-all block"
           >
-            <div className="w-9 h-9 rounded-lg bg-blue-500/20 flex items-center justify-center mb-4">
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#3b82f6" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <div className="w-9 h-9 rounded-lg bg-amber-500/20 flex items-center justify-center mb-4">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#f59e0b" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                 <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
                 <polyline points="7 10 12 15 17 10"/>
                 <line x1="12" y1="15" x2="12" y2="3"/>
               </svg>
             </div>
-            <div className="font-semibold text-ink mb-1 group-hover:text-blue-400 transition-colors">データ収集</div>
+            <div className="font-semibold text-ink mb-1 group-hover:text-amber-400 transition-colors">データ収集</div>
             <div className="text-ink-faint text-sm leading-relaxed">MEXC APIから新規上場銘柄のKlineデータを取得・保存</div>
           </Link>
 

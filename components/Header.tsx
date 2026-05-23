@@ -53,13 +53,13 @@ export function Header() {
 
         {/* Logo */}
         <Link href="/" className="flex items-center gap-2.5 group">
-          <div className="w-8 h-8 rounded-lg bg-blue-600 flex items-center justify-center flex-shrink-0">
+          <div className="w-8 h-8 rounded-lg bg-amber-500 flex items-center justify-center flex-shrink-0">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
               <polyline points="22 7 13.5 15.5 8.5 10.5 2 17"/>
               <polyline points="16 7 22 7 22 13"/>
             </svg>
           </div>
-          <span className="font-bold text-ink text-base group-hover:text-blue-400 transition-colors">
+          <span className="font-bold text-ink text-base group-hover:text-amber-400 transition-colors">
             MEXC Short
           </span>
         </Link>
@@ -76,13 +76,13 @@ export function Header() {
                 href={href}
                 className={`relative px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
                   isActive
-                    ? 'bg-panel-raised text-blue-400'
+                    ? 'bg-panel-raised text-amber-400'
                     : 'text-ink-dim hover:text-ink hover:bg-panel-raised'
                 }`}
               >
                 {label}
                 {showBadge && (
-                  <span className="absolute -top-0.5 -right-0.5 w-4 h-4 flex items-center justify-center rounded-full bg-blue-500 text-white text-[9px] font-bold leading-none">
+                  <span className="absolute -top-0.5 -right-0.5 w-4 h-4 flex items-center justify-center rounded-full bg-amber-500 text-white text-[9px] font-bold leading-none">
                     {openCount}
                   </span>
                 )}

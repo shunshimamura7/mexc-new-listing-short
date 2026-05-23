@@ -101,7 +101,7 @@ export default function CollectPage() {
             <input
               type="number" min={1} max={365} value={days}
               onChange={(e) => setDays(Number(e.target.value))}
-              className="w-20 bg-panel-raised border border-rim rounded-lg px-3 py-2 text-ink text-center focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="w-20 bg-panel-raised border border-rim rounded-lg px-3 py-2 text-ink text-center focus:outline-none focus:ring-2 focus:ring-amber-500"
               disabled={loading}
             />
             <span className="text-ink-dim text-sm">日以内の新規上場銘柄</span>
@@ -109,7 +109,7 @@ export default function CollectPage() {
           <button
             onClick={handleCollect}
             disabled={loading}
-            className="px-6 py-2.5 bg-blue-600 hover:bg-blue-500 disabled:bg-panel-raised disabled:text-ink-faint disabled:cursor-not-allowed rounded-lg font-medium transition-colors text-white"
+            className="px-6 py-2.5 bg-amber-500 hover:bg-amber-400 disabled:bg-panel-raised disabled:text-ink-faint disabled:cursor-not-allowed rounded-lg font-medium transition-colors text-white"
           >
             {loading ? '取得中...' : '取得開始'}
           </button>
@@ -131,7 +131,7 @@ export default function CollectPage() {
             </div>
             <div className="w-full bg-panel-raised rounded-full h-2">
               <div
-                className="bg-blue-500 h-2 rounded-full transition-all duration-300"
+                className="bg-amber-500 h-2 rounded-full transition-all duration-300"
                 style={{ width: `${pct}%` }}
               />
             </div>

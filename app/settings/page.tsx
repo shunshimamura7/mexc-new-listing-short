@@ -32,7 +32,7 @@ function SettingRow({ label, desc, value, min, max, step, unit, onChange }: {
         step={step}
         value={value}
         onChange={(e) => onChange(Number(e.target.value))}
-        className="w-full accent-blue-500"
+        className="w-full accent-amber-500"
       />
       <div className="flex justify-between text-xs text-ink-faint mt-1">
         <span>{unit.startsWith('$') ? `${unit}${min.toLocaleString()}` : `${min}${unit}`}</span>
@@ -162,7 +162,7 @@ export default function SettingsPage() {
         <div className="flex gap-3">
           <button
             onClick={handleSave}
-            className="flex-1 py-2.5 bg-blue-600 hover:bg-blue-500 rounded-lg font-medium text-white transition-colors"
+            className="flex-1 py-2.5 bg-amber-500 hover:bg-amber-400 rounded-lg font-medium text-white transition-colors"
           >
             保存
           </button>

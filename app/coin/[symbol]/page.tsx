@@ -147,7 +147,7 @@ export default function CoinDetailPage() {
             label="スコア"
             value={`${score.total}/5`}
             sub="BTC除く最大4点"
-            color={score.total >= 3 ? 'text-blue-400' : 'text-ink-dim'}
+            color={score.total >= 3 ? 'text-amber-400' : 'text-ink-dim'}
           />
           <StatCard
             label="FR (max)"
@@ -199,7 +199,7 @@ export default function CoinDetailPage() {
               {entryPrice > 0 && (
                 <ReferenceLine y={entryPrice} stroke="#94a3b8" strokeDasharray="4 4" label={{ value: '上場', fill: '#94a3b8', fontSize: 10 }} />
               )}
-              <Line type="monotone" dataKey="close" stroke="#3b82f6" strokeWidth={2} dot={false} name="終値" />
+              <Line type="monotone" dataKey="close" stroke="#f59e0b" strokeWidth={2} dot={false} name="終値" />
             </LineChart>
           </ResponsiveContainer>
         </div>
@@ -231,7 +231,7 @@ export default function CoinDetailPage() {
             <h2 className="font-semibold text-ink">スコアリング結果</h2>
             <div className="flex items-center gap-2">
               {Array.from({ length: 5 }, (_, i) => (
-                <span key={i} className={`w-3 h-3 rounded-full ${i < score.total ? 'bg-blue-400' : 'bg-rim'}`} />
+                <span key={i} className={`w-3 h-3 rounded-full ${i < score.total ? 'bg-amber-400' : 'bg-rim'}`} />
               ))}
               <span className="ml-1 font-bold text-ink">{score.total}/5</span>
             </div>
@@ -240,7 +240,7 @@ export default function CoinDetailPage() {
             {scoreCriteria.map(({ icon, label, passed, value }) => (
               <div key={icon} className="flex items-center justify-between text-sm py-1.5 border-b border-rim last:border-0">
                 <div className="flex items-center gap-2">
-                  <span className={`text-xs font-mono ${passed ? 'text-blue-400' : 'text-ink-faint'}`}>{icon}</span>
+                  <span className={`text-xs font-mono ${passed ? 'text-amber-400' : 'text-ink-faint'}`}>{icon}</span>
                   <span className={passed ? 'text-ink' : 'text-ink-faint'}>{label}</span>
                 </div>
                 <div className="flex items-center gap-3">
