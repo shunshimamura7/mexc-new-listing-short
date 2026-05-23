@@ -5,6 +5,80 @@ import type { Kline, ListingData } from '@/types'
 
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms))
 
+// ── Cron用 GET ──────────────────────────────────────────────────────────
+// Vercel Cron から毎日 UTC 0:00（JST 9:00）に呼ばれる
+// Authorization: Bearer {CRON_SECRET} で保護
+export async function GET(req: NextRequest) {
+  const secret = process.env.CRON_SECRET
+  if (secret) {
+    const auth = req.headers.get('authorization') ?? ''
+    if (auth !== `Bearer ${secret}`) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+  }
+
+  const DAYS = 30
+  const results: { symbol: string; status: string; error?: string }[] = []
+
+  try {
+    const contracts  = await getContractList()
+    const candidates = recentContracts(contracts, DAYS)
+    const tickers    = await getTickers()
+    const tickerMap  = new Map(tickers.map((t) => [t.symbol, t]))
+
+    for (const { symbol, createTime } of candidates) {
+      // 収集済みはスキップ
+      const existing = await loadListing(symbol)
+      if (existing) { results.push({ symbol, status: 'skip' }); continue }
+
+      await sleep(200)
+
+      const startSec = Math.floor(createTime / 1000)
+      const endSec   = startSec + 72 * 3600
+      const { data: raw, error: fetchError } = await fetchKlineSafe(symbol, startSec, endSec)
+
+      if (fetchError || !raw?.time?.length) {
+        results.push({ symbol, status: 'error', error: fetchError ?? 'no data' })
+        continue
+      }
+
+      const klines: Kline[] = raw.time.slice(0, 72).map((t, i) => ({
+        time:   t,
+        open:   Number(raw.open[i]),
+        high:   Number(raw.high[i]),
+        low:    Number(raw.low[i]),
+        close:  Number(raw.close[i]),
+        volume: Number(raw.vol[i]),
+      }))
+
+      const entryPrice = klines[0]?.open || klines[0]?.close || 0
+      let peakHigh = entryPrice, peakIdx = 0
+      for (let i = 0; i < klines.length; i++) {
+        if (klines[i].high > peakHigh) { peakHigh = klines[i].high; peakIdx = i }
+      }
+      const initialPumpPct = entryPrice > 0 ? ((peakHigh - entryPrice) / entryPrice) * 100 : 0
+      const ticker = tickerMap.get(symbol)
+
+      await saveListing({
+        symbol, listingTime: createTime, klines, initialPumpPct,
+        peakTime: peakIdx, fdvMcRatio: 0,
+        maxFR: ticker?.fundingRate ?? 0,
+        maxOI: ticker?.holdVol    ?? 0,
+      } satisfies ListingData)
+
+      results.push({ symbol, status: 'done' })
+    }
+
+    const done  = results.filter((r) => r.status === 'done').length
+    const skip  = results.filter((r) => r.status === 'skip').length
+    const error = results.filter((r) => r.status === 'error').length
+
+    return NextResponse.json({ success: true, total: candidates.length, done, skip, error, results })
+  } catch (e) {
+    return NextResponse.json({ success: false, error: String(e) }, { status: 500 })
+  }
+}
+
 async function fetchKlineSafe(symbol: string, startSec: number, endSec: number) {
   for (let attempt = 1; attempt <= 3; attempt++) {
     try {
