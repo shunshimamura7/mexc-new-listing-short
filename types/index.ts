@@ -42,10 +42,16 @@ export type TradeOutcome = 'tp' | 'sl' | 'forced'
 
 export type TradeResult = {
   symbol: string
+  listingTime: number
   entryPrice: number
   exitPrice: number
   pnlPct: number
   outcome: TradeOutcome
+}
+
+export type CoinGeckoData = {
+  fdvUsd: number | null
+  marketCapUsd: number | null
 }
 
 export type BacktestSummary = {
@@ -112,6 +118,8 @@ export type MexcTickerItem = {
   symbol: string
   holdVol: number
   fundingRate: number
+  lastPrice?: string       // MEXC レスポンスに含まれる現在価格（文字列）
+  priceChangeRate?: string // 24h変化率
 }
 
 export type ScoreDetail = {
@@ -153,4 +161,30 @@ export type GridsearchLatestData = {
     excludeStock: boolean
   }
   savedAt: number
+}
+
+export type TradeStatus = 'open' | 'closed_tp' | 'closed_sl' | 'closed_manual'
+
+export type Trade = {
+  id: string
+  symbol: string
+  entryDate: string        // ISO string
+  entryPrice: number
+  slPrice: number
+  tpPrice: number
+  positionSize: number     // USDT
+  snapshot: {
+    pumpPct: number
+    hoursElapsed: number
+    volumeRatio: number
+    fundingRate: number
+    btcChange24h: number
+    score: number
+  }
+  exitDate: string | null  // ISO string
+  exitPrice: number | null
+  status: TradeStatus
+  pnlPct: number | null    // positive = profit for short
+  pnlUsd: number | null
+  notes: string
 }

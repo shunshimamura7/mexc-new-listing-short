@@ -46,23 +46,25 @@ function evaluateTrade(
   const slPrice = entryPrice * (1 + slPct / 100)
   const tpPrice = entryPrice * (1 - tpPct / 100)
 
+  const base = { symbol: listing.symbol, listingTime: listing.listingTime, entryPrice }
+
   for (const candle of listing.klines.slice(entryHours + 1)) {
     // SL と TP が同一キャンドル内で両方ヒットする場合は先にSLを優先（不利側）
     if (candle.high >= slPrice && candle.low <= tpPrice) {
-      return { symbol: listing.symbol, entryPrice, exitPrice: slPrice, pnlPct: -slPct, outcome: 'sl' }
+      return { ...base, exitPrice: slPrice, pnlPct: -slPct, outcome: 'sl' }
     }
     if (candle.high >= slPrice) {
-      return { symbol: listing.symbol, entryPrice, exitPrice: slPrice, pnlPct: -slPct, outcome: 'sl' }
+      return { ...base, exitPrice: slPrice, pnlPct: -slPct, outcome: 'sl' }
     }
     if (candle.low <= tpPrice) {
-      return { symbol: listing.symbol, entryPrice, exitPrice: tpPrice, pnlPct: tpPct, outcome: 'tp' }
+      return { ...base, exitPrice: tpPrice, pnlPct: tpPct, outcome: 'tp' }
     }
   }
 
   // 72h到達で強制決済
   const lastClose = listing.klines.at(-1)?.close ?? entryPrice
   const pnlPct = entryPrice > 0 ? ((entryPrice - lastClose) / entryPrice) * 100 : 0
-  return { symbol: listing.symbol, entryPrice, exitPrice: lastClose, pnlPct, outcome: 'forced' }
+  return { ...base, exitPrice: lastClose, pnlPct, outcome: 'forced' }
 }
 
 function calcSummary(trades: TradeResult[]): BacktestSummary {

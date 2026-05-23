@@ -8,14 +8,36 @@ const NAV_LINKS = [
   { href: '/score',    label: 'スコアリング' },
   { href: '/collect',  label: 'データ収集' },
   { href: '/backtest', label: 'バックテスト' },
+  { href: '/trades',   label: 'マイトレード' },
+  { href: '/settings', label: '設定' },
 ]
 
 export function Header() {
   const pathname = usePathname()
-  const [isDark, setIsDark] = useState(true)
+  const [isDark, setIsDark]         = useState(true)
+  const [openCount, setOpenCount]   = useState<number | null>(null)
 
   useEffect(() => {
     setIsDark(localStorage.getItem('theme') !== 'light')
+  }, [])
+
+  useEffect(() => {
+    async function fetchOpenCount() {
+      try {
+        const res  = await fetch('/api/trades')
+        const json = await res.json()
+        if (json.success) {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const count = (json.trades as any[]).filter((t: any) => t.status === 'open').length
+          setOpenCount(count)
+        }
+      } catch {
+        // ignore
+      }
+    }
+    fetchOpenCount()
+    const id = setInterval(fetchOpenCount, 60_000)
+    return () => clearInterval(id)
   }, [])
 
   function toggleTheme() {
@@ -44,19 +66,29 @@ export function Header() {
 
         {/* Nav + toggle */}
         <div className="flex items-center gap-1">
-          {NAV_LINKS.map(({ href, label }) => (
-            <Link
-              key={href}
-              href={href}
-              className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
-                pathname === href
-                  ? 'bg-panel-raised text-blue-400'
-                  : 'text-ink-dim hover:text-ink hover:bg-panel-raised'
-              }`}
-            >
-              {label}
-            </Link>
-          ))}
+          {NAV_LINKS.map(({ href, label }) => {
+            const isActive = pathname === href
+            const isTrades = href === '/trades'
+            const showBadge = isTrades && openCount !== null && openCount > 0
+            return (
+              <Link
+                key={href}
+                href={href}
+                className={`relative px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
+                  isActive
+                    ? 'bg-panel-raised text-blue-400'
+                    : 'text-ink-dim hover:text-ink hover:bg-panel-raised'
+                }`}
+              >
+                {label}
+                {showBadge && (
+                  <span className="absolute -top-0.5 -right-0.5 w-4 h-4 flex items-center justify-center rounded-full bg-blue-500 text-white text-[9px] font-bold leading-none">
+                    {openCount}
+                  </span>
+                )}
+              </Link>
+            )
+          })}
 
           <div className="w-px h-5 bg-rim mx-2" />
 

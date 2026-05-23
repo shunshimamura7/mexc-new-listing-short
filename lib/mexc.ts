@@ -72,6 +72,17 @@ export async function getTickers(): Promise<MexcTickerItem[]> {
   return res.data
 }
 
+export async function getTickerPrice(symbol: string): Promise<number | null> {
+  try {
+    const res = await get<MexcTickerItem>('/contract/ticker', { symbol })
+    const item = Array.isArray(res.data) ? res.data[0] : res.data
+    if (!item?.lastPrice) return null
+    return parseFloat(item.lastPrice)
+  } catch {
+    return null
+  }
+}
+
 export function recentContracts(contracts: MexcContract[], days: number): MexcContract[] {
   const cutoff = Date.now() - days * 24 * 60 * 60 * 1000
   return contracts.filter((c) => c.state === 0 && c.createTime >= cutoff)

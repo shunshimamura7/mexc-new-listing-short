@@ -1,62 +1,56 @@
-import type { ListingData, GridsearchLatestData } from '@/types'
+import type { ListingData, GridsearchLatestData, Trade } from '@/types'
 
-// ローカル環境: fs / 本番環境(Vercel): @vercel/blob
-const IS_VERCEL = !!process.env.BLOB_READ_WRITE_TOKEN
+// KV_REST_API_URL が設定されていれば Vercel KV を使う。なければローカル fs にフォールバック
+const IS_KV = !!process.env.KV_REST_API_URL
 
-// ===== Vercel Blob 実装 =====
-async function blobList(): Promise<string[]> {
-  const { list } = await import('@vercel/blob')
-  const { blobs } = await list({ prefix: 'listings/' })
-  return blobs.map((b) => b.pathname.replace('listings/', '').replace('.json', ''))
+// ===== Vercel KV 実装 =====
+// キー設計:
+//   listing:{symbol}    → ListingData (JSON object)
+//   listings:symbols    → Redis Set of all symbols
+//   gridsearch:latest   → GridsearchLatestData
+//   trades              → Trade[]
+
+async function kvSaveListing(data: ListingData): Promise<void> {
+  const { kv } = await import('@vercel/kv')
+  await kv.set(`listing:${data.symbol}`, data)
+  await kv.sadd('listings:symbols', data.symbol)
 }
 
-async function blobFetch(url: string): Promise<ListingData | null> {
-  const res = await fetch(url, {
-    headers: { authorization: `Bearer ${process.env.BLOB_READ_WRITE_TOKEN ?? ''}` },
-  })
-  if (!res.ok) return null
-  return res.json() as Promise<ListingData>
+async function kvLoadListing(symbol: string): Promise<ListingData | null> {
+  const { kv } = await import('@vercel/kv')
+  return kv.get<ListingData>(`listing:${symbol}`)
 }
 
-async function blobLoad(symbol: string): Promise<ListingData | null> {
-  const { list } = await import('@vercel/blob')
-  const { blobs } = await list({ prefix: `listings/${symbol}.json` })
-  if (blobs.length === 0) return null
-  return blobFetch(blobs[0].url)
+async function kvLoadAll(): Promise<ListingData[]> {
+  const { kv } = await import('@vercel/kv')
+  const symbols = (await kv.smembers('listings:symbols')) as string[]
+  if (!symbols.length) return []
+  const items = await Promise.all(symbols.map((s) => kv.get<ListingData>(`listing:${s}`)))
+  return items.filter((i): i is ListingData => i !== null)
 }
 
-async function blobLoadAll(): Promise<ListingData[]> {
-  const { list } = await import('@vercel/blob')
-  const { blobs } = await list({ prefix: 'listings/' })
-  const results = await Promise.all(blobs.map((b) => blobFetch(b.url)))
-  return results.filter((r): r is ListingData => r !== null)
+async function kvListSymbols(): Promise<string[]> {
+  const { kv } = await import('@vercel/kv')
+  return (await kv.smembers('listings:symbols')) as string[]
 }
 
-async function blobSave(data: ListingData): Promise<void> {
-  const { put } = await import('@vercel/blob')
-  await put(`listings/${data.symbol}.json`, JSON.stringify(data), {
-    access: 'private',
-    contentType: 'application/json',
-    addRandomSuffix: false,
-    allowOverwrite: true,
-  })
+async function kvDeleteListing(symbol: string): Promise<void> {
+  const { kv } = await import('@vercel/kv')
+  await kv.del(`listing:${symbol}`)
+  await kv.srem('listings:symbols', symbol)
 }
 
-async function blobDelete(symbol: string): Promise<void> {
-  const { list, del } = await import('@vercel/blob')
-  const { blobs } = await list({ prefix: `listings/${symbol}.json` })
-  if (blobs.length > 0) await del(blobs[0].url)
-}
-
-async function blobDeleteAll(): Promise<void> {
-  const { list, del } = await import('@vercel/blob')
-  const { blobs } = await list({ prefix: 'listings/' })
-  await Promise.all(blobs.map((b) => del(b.url)))
+async function kvDeleteAll(): Promise<void> {
+  const { kv } = await import('@vercel/kv')
+  const symbols = (await kv.smembers('listings:symbols')) as string[]
+  if (symbols.length > 0) {
+    await Promise.all(symbols.map((s) => kv.del(`listing:${s}`)))
+  }
+  await kv.del('listings:symbols')
 }
 
 // ===== ローカル fs 実装 =====
 function fsImpl() {
-  // Dynamic require to avoid bundling fs in edge runtime
   // eslint-disable-next-line @typescript-eslint/no-require-imports
   const fs   = require('fs')   as typeof import('fs')
   // eslint-disable-next-line @typescript-eslint/no-require-imports
@@ -67,16 +61,16 @@ function fsImpl() {
   return { fs, path, DATA_DIR, ensure, fp }
 }
 
-// ===== 公開 API (同期/非同期を統一して async に) =====
+// ===== 公開 API =====
 export async function saveListing(data: ListingData): Promise<void> {
-  if (IS_VERCEL) return blobSave(data)
+  if (IS_KV) return kvSaveListing(data)
   const { fs, ensure, fp } = fsImpl()
   ensure()
   fs.writeFileSync(fp(data.symbol), JSON.stringify(data, null, 2), 'utf-8')
 }
 
 export async function loadListing(symbol: string): Promise<ListingData | null> {
-  if (IS_VERCEL) return blobLoad(symbol)
+  if (IS_KV) return kvLoadListing(symbol)
   const { fs, ensure, fp } = fsImpl()
   ensure()
   const p = fp(symbol)
@@ -85,24 +79,27 @@ export async function loadListing(symbol: string): Promise<ListingData | null> {
 }
 
 export async function loadAllListings(): Promise<ListingData[]> {
-  if (IS_VERCEL) return blobLoadAll()
+  if (IS_KV) return kvLoadAll()
   const { fs, path, DATA_DIR, ensure } = fsImpl()
   ensure()
   return fs
     .readdirSync(DATA_DIR)
-    .filter((f: string) => f.endsWith('.json'))
+    .filter((f: string) => f.endsWith('.json') && !f.startsWith('gridsearch-') && !f.startsWith('trades'))
     .map((f: string) => JSON.parse(fs.readFileSync(path.join(DATA_DIR, f), 'utf-8')) as ListingData)
 }
 
 export async function listSymbols(): Promise<string[]> {
-  if (IS_VERCEL) return blobList()
+  if (IS_KV) return kvListSymbols()
   const { fs, DATA_DIR, ensure } = fsImpl()
   ensure()
-  return fs.readdirSync(DATA_DIR).filter((f: string) => f.endsWith('.json')).map((f: string) => f.replace('.json', ''))
+  return fs
+    .readdirSync(DATA_DIR)
+    .filter((f: string) => f.endsWith('.json') && !f.startsWith('gridsearch-') && !f.startsWith('trades'))
+    .map((f: string) => f.replace('.json', ''))
 }
 
 export async function deleteListing(symbol: string): Promise<void> {
-  if (IS_VERCEL) return blobDelete(symbol)
+  if (IS_KV) return kvDeleteListing(symbol)
   const { fs, ensure, fp } = fsImpl()
   ensure()
   const p = fp(symbol)
@@ -110,7 +107,7 @@ export async function deleteListing(symbol: string): Promise<void> {
 }
 
 export async function deleteAll(): Promise<void> {
-  if (IS_VERCEL) return blobDeleteAll()
+  if (IS_KV) return kvDeleteAll()
   const { fs, path, DATA_DIR, ensure } = fsImpl()
   ensure()
   for (const f of fs.readdirSync(DATA_DIR).filter((f: string) => f.endsWith('.json'))) {
@@ -119,14 +116,9 @@ export async function deleteAll(): Promise<void> {
 }
 
 export async function saveGridsearchLatest(data: GridsearchLatestData): Promise<void> {
-  if (IS_VERCEL) {
-    const { put } = await import('@vercel/blob')
-    await put('gridsearch/latest.json', JSON.stringify(data), {
-      access: 'private',
-      contentType: 'application/json',
-      addRandomSuffix: false,
-      allowOverwrite: true,
-    })
+  if (IS_KV) {
+    const { kv } = await import('@vercel/kv')
+    await kv.set('gridsearch:latest', data)
     return
   }
   const { fs, ensure, fp } = fsImpl()
@@ -135,15 +127,9 @@ export async function saveGridsearchLatest(data: GridsearchLatestData): Promise<
 }
 
 export async function loadGridsearchLatest(): Promise<GridsearchLatestData | null> {
-  if (IS_VERCEL) {
-    const { list } = await import('@vercel/blob')
-    const { blobs } = await list({ prefix: 'gridsearch/latest.json' })
-    if (blobs.length === 0) return null
-    const res = await fetch(blobs[0].url, {
-      headers: { authorization: `Bearer ${process.env.BLOB_READ_WRITE_TOKEN ?? ''}` },
-    })
-    if (!res.ok) return null
-    return res.json() as Promise<GridsearchLatestData>
+  if (IS_KV) {
+    const { kv } = await import('@vercel/kv')
+    return kv.get<GridsearchLatestData>('gridsearch:latest')
   }
   const { fs, ensure, fp } = fsImpl()
   ensure()
@@ -152,16 +138,69 @@ export async function loadGridsearchLatest(): Promise<GridsearchLatestData | nul
   return JSON.parse(fs.readFileSync(p, 'utf-8')) as GridsearchLatestData
 }
 
+// ===== Trade DB =====
+async function kvLoadTrades(): Promise<Trade[]> {
+  const { kv } = await import('@vercel/kv')
+  return (await kv.get<Trade[]>('trades')) ?? []
+}
+
+async function kvSaveTrades(trades: Trade[]): Promise<void> {
+  const { kv } = await import('@vercel/kv')
+  await kv.set('trades', trades)
+}
+
+export async function getAllTrades(): Promise<Trade[]> {
+  if (IS_KV) return kvLoadTrades()
+  const { fs, ensure, fp } = fsImpl()
+  ensure()
+  const p = fp('trades')
+  if (!fs.existsSync(p)) return []
+  return JSON.parse(fs.readFileSync(p, 'utf-8')) as Trade[]
+}
+
+export async function createTrade(trade: Trade): Promise<void> {
+  const trades = await getAllTrades()
+  trades.push(trade)
+  if (IS_KV) { await kvSaveTrades(trades); return }
+  const { fs, ensure, fp } = fsImpl()
+  ensure()
+  fs.writeFileSync(fp('trades'), JSON.stringify(trades, null, 2), 'utf-8')
+}
+
+export async function updateTrade(id: string, patch: Partial<Trade>): Promise<Trade | null> {
+  const trades = await getAllTrades()
+  const idx = trades.findIndex((t) => t.id === id)
+  if (idx === -1) return null
+  trades[idx] = { ...trades[idx], ...patch }
+  if (IS_KV) { await kvSaveTrades(trades); return trades[idx] }
+  const { fs, ensure, fp } = fsImpl()
+  ensure()
+  fs.writeFileSync(fp('trades'), JSON.stringify(trades, null, 2), 'utf-8')
+  return trades[idx]
+}
+
+export async function deleteTrade(id: string): Promise<boolean> {
+  const trades = await getAllTrades()
+  const next = trades.filter((t) => t.id !== id)
+  if (next.length === trades.length) return false
+  if (IS_KV) { await kvSaveTrades(next); return true }
+  const { fs, ensure, fp } = fsImpl()
+  ensure()
+  fs.writeFileSync(fp('trades'), JSON.stringify(next, null, 2), 'utf-8')
+  return true
+}
+
 export async function storageStats(): Promise<{ count: number; bytes: number }> {
-  if (IS_VERCEL) {
-    const { list } = await import('@vercel/blob')
-    const { blobs } = await list({ prefix: 'listings/' })
-    const bytes = blobs.reduce((s, b) => s + (b.size ?? 0), 0)
-    return { count: blobs.length, bytes }
+  if (IS_KV) {
+    const { kv } = await import('@vercel/kv')
+    const count = await kv.scard('listings:symbols')
+    return { count: count ?? 0, bytes: 0 }
   }
   const { fs, path, DATA_DIR, ensure } = fsImpl()
   ensure()
-  const files = fs.readdirSync(DATA_DIR).filter((f: string) => f.endsWith('.json'))
+  const files = fs
+    .readdirSync(DATA_DIR)
+    .filter((f: string) => f.endsWith('.json') && !f.startsWith('gridsearch-') && !f.startsWith('trades'))
   const bytes = files.reduce((acc: number, f: string) => acc + fs.statSync(path.join(DATA_DIR, f)).size, 0)
   return { count: files.length, bytes }
 }

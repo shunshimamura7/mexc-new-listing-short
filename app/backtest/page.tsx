@@ -1,6 +1,7 @@
 'use client'
 
 import { Fragment, useState, useEffect } from 'react'
+import Link from 'next/link'
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine,
 } from 'recharts'
@@ -34,26 +35,41 @@ function Badge({ label, value, color = 'text-ink' }: { label: string; value: str
   )
 }
 
+function formatListingDate(ts: number): string {
+  return new Date(ts).toLocaleDateString('ja-JP', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })
+}
+
 function TradeTable({ trades }: { trades: TradeResult[] }) {
   return (
     <div className="overflow-x-auto max-h-52 overflow-y-auto">
       <table className="w-full text-xs">
         <thead className="sticky top-0 bg-panel-raised">
           <tr className="text-ink-faint border-b border-rim">
-            <th className="pb-1.5 pr-4 text-left font-normal">銘柄</th>
-            <th className="pb-1.5 pr-4 text-right font-normal">エントリー</th>
-            <th className="pb-1.5 pr-4 text-right font-normal">決済</th>
-            <th className="pb-1.5 pr-4 text-center font-normal">結果</th>
+            <th className="pb-1.5 pr-3 text-left font-normal">銘柄</th>
+            <th className="pb-1.5 pr-3 text-left font-normal">上場日時</th>
+            <th className="pb-1.5 pr-3 text-right font-normal">エントリー</th>
+            <th className="pb-1.5 pr-3 text-right font-normal">決済</th>
+            <th className="pb-1.5 pr-3 text-center font-normal">結果</th>
             <th className="pb-1.5 text-right font-normal">PnL</th>
           </tr>
         </thead>
         <tbody>
           {trades.map((t, i) => (
-            <tr key={i} className="border-b border-rim">
-              <td className="py-1 pr-4 font-mono text-ink-dim">{t.symbol}</td>
-              <td className="py-1 pr-4 text-right font-mono text-ink-faint">{t.entryPrice.toFixed(4)}</td>
-              <td className="py-1 pr-4 text-right font-mono text-ink-faint">{t.exitPrice.toFixed(4)}</td>
-              <td className="py-1 pr-4 text-center">
+            <tr
+              key={i}
+              className={`border-b border-rim ${t.pnlPct >= 0 ? 'bg-green-950/20' : 'bg-red-950/20'}`}
+            >
+              <td className="py-1 pr-3 font-mono">
+                <Link href={`/coin/${t.symbol}`} className="text-ink-dim hover:text-blue-400 transition-colors">
+                  {t.symbol}
+                </Link>
+              </td>
+              <td className="py-1 pr-3 text-ink-faint whitespace-nowrap">
+                {t.listingTime ? formatListingDate(t.listingTime) : '—'}
+              </td>
+              <td className="py-1 pr-3 text-right font-mono text-ink-faint">{t.entryPrice.toFixed(4)}</td>
+              <td className="py-1 pr-3 text-right font-mono text-ink-faint">{t.exitPrice.toFixed(4)}</td>
+              <td className="py-1 pr-3 text-center">
                 <span className={`font-medium ${OUTCOME_COLOR[t.outcome]}`}>{OUTCOME_LABEL[t.outcome]}</span>
               </td>
               <td className={`py-1 text-right font-mono font-medium ${t.pnlPct >= 0 ? 'text-green-400' : 'text-red-400'}`}>
@@ -215,9 +231,15 @@ export default function BacktestPage() {
   const [gsSortBy, setGsSortBy]             = useState<'ev' | 'avgPnl' | 'winRate'>('ev')
   const [gsShowAll, setGsShowAll]           = useState(false)
 
+  // グリッドサーチ実行結果の展開
   const [expandedKey, setExpandedKey]         = useState<string | null>(null)
   const [expandedTrades, setExpandedTrades]   = useState<Record<string, TradeResult[]>>({})
   const [expandedLoading, setExpandedLoading] = useState<string | null>(null)
+
+  // 最新グリッドサーチ結果（GitHub Actions）の展開
+  const [latestExpandedKey, setLatestExpandedKey]         = useState<string | null>(null)
+  const [latestExpandedTrades, setLatestExpandedTrades]   = useState<Record<string, TradeResult[]>>({})
+  const [latestExpandedLoading, setLatestExpandedLoading] = useState<string | null>(null)
 
   const [latestGs, setLatestGs] = useState<GridsearchLatestData | null>(null)
 
@@ -271,6 +293,37 @@ export default function BacktestPage() {
     }
   }
 
+  async function handleLatestExpand(r: GridSearchResult) {
+    if (!latestGs) return
+    const key = `${r.entryHours}-${r.slPct}-${r.tpPct}`
+    if (latestExpandedKey === key) { setLatestExpandedKey(null); return }
+    if (latestExpandedTrades[key]) { setLatestExpandedKey(key); return }
+    setLatestExpandedLoading(key)
+    try {
+      const res = await fetch('/api/backtest', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          entryHours:    r.entryHours,
+          slPct:         r.slPct,
+          tpPct:         r.tpPct,
+          minPumpPct:    latestGs.params.minPumpPct,
+          minFdvMcRatio: 0,
+          minFR:         0,
+          excludeStock:  latestGs.params.excludeStock,
+          stockOnly:     false,
+        }),
+      })
+      const json = await res.json()
+      if (json.success) {
+        setLatestExpandedTrades((prev) => ({ ...prev, [key]: json.summary.trades }))
+        setLatestExpandedKey(key)
+      }
+    } finally {
+      setLatestExpandedLoading(null)
+    }
+  }
+
   async function handleGridSearch() {
     setGsLoading(true)
     setGsError(null)
@@ -321,6 +374,7 @@ export default function BacktestPage() {
                   自動収集後に計算 · {formatTimeAgo(latestGs.savedAt)} 更新
                   {' '}· データ {latestGs.listingCount} 件
                   {' '}· 初動ポンプ {latestGs.params.minPumpPct}%以上
+                  {' '}· クリックでトレード一覧を展開
                 </p>
               </div>
               <span className="text-xs text-ink-faint bg-panel px-2.5 py-1 rounded-lg font-mono border border-rim">
@@ -331,26 +385,17 @@ export default function BacktestPage() {
             </div>
             <div className="p-4 space-y-2">
               {latestGs.results.slice(0, 10).map((r, i) => {
-                const medal = i < 3 ? MEDAL[i] : null
+                const key = `${r.entryHours}-${r.slPct}-${r.tpPct}`
                 return (
-                  <div
-                    key={i}
-                    className={`bg-panel rounded-xl p-4 border ${medal ? `${medal.border} ${medal.bg}` : 'border-rim'}`}
-                  >
-                    <div className="flex items-center gap-3">
-                      <div className={`text-2xl font-bold font-mono w-8 text-center flex-shrink-0 ${medal?.num ?? 'text-ink-faint'}`}>
-                        {i + 1}
-                      </div>
-                      <div className="flex flex-wrap gap-2 flex-1 min-w-0">
-                        <Badge label="エントリー" value={`${r.entryHours}h後`} />
-                        <Badge label="SL" value={`${r.slPct}%`} color="text-red-400" />
-                        <Badge label="TP" value={`${r.tpPct}%`} color="text-green-400" />
-                        <Badge label="勝率" value={`${r.winRate.toFixed(1)}%`} color={r.winRate >= 50 ? 'text-green-400' : 'text-ink-dim'} />
-                        <Badge label="期待値" value={`${r.expectedValue >= 0 ? '+' : ''}${r.expectedValue.toFixed(2)}%`} color={r.expectedValue >= 0 ? 'text-emerald-400' : 'text-red-400'} />
-                        <Badge label="N件" value={String(r.tradeCount)} />
-                      </div>
-                    </div>
-                  </div>
+                  <RankCard
+                    key={key}
+                    r={r}
+                    rank={i + 1}
+                    isExpanded={latestExpandedKey === key}
+                    isExpandLoading={latestExpandedLoading === key}
+                    trades={latestExpandedTrades[key] ?? []}
+                    onExpand={() => handleLatestExpand(r)}
+                  />
                 )
               })}
             </div>
@@ -506,6 +551,7 @@ export default function BacktestPage() {
                   <thead className="sticky top-0 bg-panel">
                     <tr className="text-ink-faint text-left border-b border-rim">
                       <th className="px-5 py-2.5 font-medium">銘柄</th>
+                      <th className="px-3 py-2.5 font-medium">上場日時</th>
                       <th className="px-3 py-2.5 text-right font-medium">エントリー</th>
                       <th className="px-3 py-2.5 text-right font-medium">決済</th>
                       <th className="px-3 py-2.5 text-center font-medium">結果</th>
@@ -514,8 +560,15 @@ export default function BacktestPage() {
                   </thead>
                   <tbody className="divide-y divide-rim">
                     {(summary!.trades as TradeResult[]).map((t, i) => (
-                      <tr key={i} className="hover:bg-panel-raised transition-colors">
-                        <td className="px-5 py-2 font-mono text-ink">{t.symbol}</td>
+                      <tr key={i} className={`transition-colors ${t.pnlPct >= 0 ? 'bg-green-950/10 hover:bg-green-950/20' : 'bg-red-950/10 hover:bg-red-950/20'}`}>
+                        <td className="px-5 py-2 font-mono">
+                          <Link href={`/coin/${t.symbol}`} className="text-ink hover:text-blue-400 transition-colors">
+                            {t.symbol}
+                          </Link>
+                        </td>
+                        <td className="px-3 py-2 text-ink-faint text-sm whitespace-nowrap">
+                          {t.listingTime ? formatListingDate(t.listingTime) : '—'}
+                        </td>
                         <td className="px-3 py-2 text-right font-mono text-ink-dim">{t.entryPrice.toFixed(4)}</td>
                         <td className="px-3 py-2 text-right font-mono text-ink-dim">{t.exitPrice.toFixed(4)}</td>
                         <td className="px-3 py-2 text-center">

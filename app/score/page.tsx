@@ -1,7 +1,8 @@
 'use client'
 
 import { useState, useEffect, useCallback, useRef } from 'react'
-import type { ScoreResult, ElapsedCategory } from '@/types'
+import Link from 'next/link'
+import type { ScoreResult, ElapsedCategory, Trade } from '@/types'
 
 const REFRESH_MS = 5 * 60 * 1000
 
@@ -18,7 +19,149 @@ function formatPrice(price: number): string {
   return price.toFixed(8)
 }
 
-function ScoreCard({ result, btcChangeP }: { result: ScoreResult; btcChangeP: number }) {
+function makeTradeId(): string {
+  return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 9)}`
+}
+
+// ===== Entry Modal =====
+function EntryModal({
+  result,
+  btcChangeP,
+  onClose,
+  onSaved,
+}: {
+  result: ScoreResult
+  btcChangeP: number
+  onClose: () => void
+  onSaved: () => void
+}) {
+  const [positionSize, setPositionSize] = useState('')
+  const [notes, setNotes]               = useState('')
+  const [saving, setSaving]             = useState(false)
+  const [err, setErr]                   = useState<string | null>(null)
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault()
+    setSaving(true)
+    setErr(null)
+    const trade: Trade = {
+      id: makeTradeId(),
+      symbol: result.symbol,
+      entryDate: new Date().toISOString(),
+      entryPrice: result.currentPrice,
+      slPrice: result.slPrice,
+      tpPrice: result.tpPrice,
+      positionSize: parseFloat(positionSize) || 0,
+      snapshot: {
+        pumpPct: result.initialPumpPct,
+        hoursElapsed: result.elapsedHours,
+        volumeRatio: result.volRatio,
+        fundingRate: result.fundingRate,
+        btcChange24h: btcChangeP,
+        score: result.score,
+      },
+      exitDate: null,
+      exitPrice: null,
+      status: 'open',
+      pnlPct: null,
+      pnlUsd: null,
+      notes,
+    }
+    try {
+      const res  = await fetch('/api/trades', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(trade) })
+      const json = await res.json()
+      if (!json.success) throw new Error(json.error)
+      onSaved()
+    } catch (e) {
+      setErr(String(e))
+      setSaving(false)
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm" onClick={onClose}>
+      <div className="bg-panel border border-rim rounded-2xl p-6 w-full max-w-md shadow-2xl" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center justify-between mb-5">
+          <div>
+            <div className="font-mono font-bold text-lg text-ink">{result.symbol}</div>
+            <div className="text-xs text-ink-faint mt-0.5">ショートエントリーを記録</div>
+          </div>
+          <button onClick={onClose} className="p-1.5 rounded-lg text-ink-faint hover:text-ink hover:bg-panel-raised transition-colors">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+            </svg>
+          </button>
+        </div>
+
+        {/* Price summary */}
+        <div className="grid grid-cols-3 gap-2 mb-5">
+          <div className="bg-panel-raised rounded-lg p-3 text-center">
+            <div className="text-xs text-ink-faint mb-1">エントリー</div>
+            <div className="font-mono text-sm font-medium text-ink">{formatPrice(result.currentPrice)}</div>
+          </div>
+          <div className="bg-panel-raised rounded-lg p-3 text-center">
+            <div className="text-xs text-ink-faint mb-1">SL (+30%)</div>
+            <div className="font-mono text-sm font-medium text-red-400">{formatPrice(result.slPrice)}</div>
+          </div>
+          <div className="bg-panel-raised rounded-lg p-3 text-center">
+            <div className="text-xs text-ink-faint mb-1">TP (−20%)</div>
+            <div className="font-mono text-sm font-medium text-green-400">{formatPrice(result.tpPrice)}</div>
+          </div>
+        </div>
+
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div>
+            <label className="block text-sm text-ink-dim mb-1.5">ポジションサイズ (USDT)</label>
+            <input
+              type="number"
+              min="0"
+              step="any"
+              value={positionSize}
+              onChange={(e) => setPositionSize(e.target.value)}
+              placeholder="例: 100"
+              className="w-full bg-panel-raised border border-rim rounded-lg px-3 py-2 text-sm text-ink placeholder:text-ink-faint focus:outline-none focus:border-blue-500/50"
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm text-ink-dim mb-1.5">メモ（任意）</label>
+            <textarea
+              value={notes}
+              onChange={(e) => setNotes(e.target.value)}
+              rows={2}
+              placeholder="例: 出来高枯渇が顕著"
+              className="w-full bg-panel-raised border border-rim rounded-lg px-3 py-2 text-sm text-ink placeholder:text-ink-faint focus:outline-none focus:border-blue-500/50 resize-none"
+            />
+          </div>
+
+          {err && <div className="text-red-400 text-sm bg-red-950/40 border border-red-800 rounded-lg px-3 py-2">{err}</div>}
+
+          <div className="flex gap-3 pt-1">
+            <button type="button" onClick={onClose} className="flex-1 px-4 py-2 rounded-lg bg-panel-raised border border-rim text-sm text-ink-dim hover:text-ink transition-colors">
+              キャンセル
+            </button>
+            <button type="submit" disabled={saving} className="flex-1 px-4 py-2 rounded-lg bg-red-600 hover:bg-red-500 disabled:bg-panel-raised disabled:text-ink-faint disabled:cursor-not-allowed text-sm font-medium text-white transition-colors">
+              {saving ? '記録中...' : 'エントリー記録'}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  )
+}
+
+// ===== ScoreCard =====
+function ScoreCard({
+  result,
+  btcChangeP,
+  showEntry,
+  onEntry,
+}: {
+  result: ScoreResult
+  btcChangeP: number
+  showEntry: boolean
+  onEntry: (r: ScoreResult) => void
+}) {
   const criteria = [
     { icon: '①', label: '初動ポンプ +50%',  passed: result.detail.initialPump,   value: `+${result.initialPumpPct.toFixed(1)}%` },
     { icon: '②', label: '出来高枯渇',        passed: result.detail.volumeExhaust, value: `ピーク比 ${(result.volRatio * 100).toFixed(1)}%` },
@@ -54,7 +197,9 @@ function ScoreCard({ result, btcChangeP }: { result: ScoreResult; btcChangeP: nu
       <div className="flex items-start justify-between gap-2">
         <div>
           <div className="flex items-center gap-1.5 flex-wrap mb-0.5">
-            <span className="font-mono font-bold text-ink">{result.symbol}</span>
+            <Link href={`/coin/${result.symbol}`} className="font-mono font-bold text-ink hover:text-blue-400 transition-colors">
+              {result.symbol}
+            </Link>
             {categoryBadge}
             {elapsedBadge}
           </div>
@@ -102,6 +247,16 @@ function ScoreCard({ result, btcChangeP }: { result: ScoreResult; btcChangeP: nu
           <div className="font-mono text-green-400 font-medium">{formatPrice(result.tpPrice)}</div>
         </div>
       </div>
+
+      {/* Entry button */}
+      {showEntry && (result.recommendation === 'short' || result.recommendation === 'consider') && (
+        <button
+          onClick={() => onEntry(result)}
+          className="w-full py-2 rounded-lg bg-red-600/15 border border-red-500/30 text-red-400 text-sm font-medium hover:bg-red-600/25 hover:border-red-500/50 transition-colors"
+        >
+          エントリー記録
+        </button>
+      )}
     </div>
   )
 }
@@ -122,6 +277,9 @@ export default function ScorePage() {
   const [activeTab, setActiveTab]         = useState<ElapsedCategory>('sweet')
   const [showStock, setShowStock]         = useState(false)
   const [showCommodity, setShowCommodity] = useState(false)
+
+  const [modalTarget, setModalTarget] = useState<ScoreResult | null>(null)
+  const [toast, setToast]             = useState<string | null>(null)
 
   const fetchScores = useCallback(async () => {
     setLoading(true)
@@ -153,30 +311,33 @@ export default function ScorePage() {
     return () => clearInterval(id)
   }, [])
 
+  function handleEntrySaved() {
+    setModalTarget(null)
+    setToast('エントリーを記録しました')
+    setTimeout(() => setToast(null), 3500)
+  }
+
   const btcChangeP = state?.btcChangeP ?? 0
   const btcTrend   = btcChangeP <= -2 ? '下落' : btcChangeP <= 2 ? '横ばい' : '上昇'
   const btcColor   = btcChangeP <= 2 ? 'text-green-400' : 'text-red-400'
   const mm = Math.floor(secondsLeft / 60)
   const ss = String(secondsLeft % 60).padStart(2, '0')
 
-  // カテゴリフィルター適用後の全銘柄
   const visibleAll = (state?.results ?? []).filter((r) => {
     if (r.symbolCategory === 'stock'     && !showStock)     return false
     if (r.symbolCategory === 'commodity' && !showCommodity) return false
     return true
   })
 
-  // タブ別件数
   const tabCounts = {
     sweet:   visibleAll.filter((r) => r.elapsedCategory === 'sweet').length,
     waiting: visibleAll.filter((r) => r.elapsedCategory === 'waiting').length,
     late:    visibleAll.filter((r) => r.elapsedCategory === 'late').length,
   }
 
-  // 現在タブの銘柄
   const displayed = visibleAll.filter((r) => r.elapsedCategory === activeTab)
 
-  const shortCount   = displayed.filter((r) => r.recommendation === 'short').length
+  const shortCount    = displayed.filter((r) => r.recommendation === 'short').length
   const considerCount = displayed.filter((r) => r.recommendation === 'consider').length
 
   return (
@@ -196,7 +357,6 @@ export default function ScorePage() {
           </div>
 
           <div className="flex items-center gap-4">
-            {/* BTC バッジ */}
             {state && (
               <div className="bg-panel border border-rim rounded-xl px-4 py-3 text-center min-w-[84px]">
                 <div className="text-xs text-ink-faint mb-1">BTC 24h</div>
@@ -207,7 +367,6 @@ export default function ScorePage() {
               </div>
             )}
 
-            {/* 更新ボタン */}
             <div className="flex flex-col items-end gap-1">
               <button
                 onClick={fetchScores}
@@ -223,12 +382,10 @@ export default function ScorePage() {
           </div>
         </div>
 
-        {/* エラー */}
         {error && (
           <div className="bg-red-950/60 border border-red-800 rounded-xl p-4 mb-6 text-red-400 text-sm">{error}</div>
         )}
 
-        {/* 初回ローディング */}
         {loading && !state && (
           <div className="text-center py-24">
             <div className="text-ink-dim text-lg mb-2">スコアリング中...</div>
@@ -280,7 +437,7 @@ export default function ScorePage() {
               </span>
             </div>
 
-            {/* 統計バー（sweet タブのみ推奨件数を表示） */}
+            {/* 統計バー */}
             <div className="flex flex-wrap gap-4 mb-5 text-sm">
               <span className="text-ink-faint">
                 表示: <span className="text-ink">{displayed.length}</span> 銘柄
@@ -302,7 +459,6 @@ export default function ScorePage() {
               </span>
             </div>
 
-            {/* 空ステート */}
             {displayed.length === 0 && !loading && (
               <div className="text-center py-24 text-ink-faint">
                 {activeTab === 'sweet'
@@ -313,11 +469,16 @@ export default function ScorePage() {
               </div>
             )}
 
-            {/* カードグリッド */}
             {displayed.length > 0 && (
               <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
                 {displayed.map((r) => (
-                  <ScoreCard key={r.symbol} result={r} btcChangeP={state.btcChangeP} />
+                  <ScoreCard
+                    key={r.symbol}
+                    result={r}
+                    btcChangeP={state.btcChangeP}
+                    showEntry={activeTab === 'sweet'}
+                    onEntry={setModalTarget}
+                  />
                 ))}
               </div>
             )}
@@ -325,6 +486,23 @@ export default function ScorePage() {
         )}
 
       </div>
+
+      {/* Entry modal */}
+      {modalTarget && state && (
+        <EntryModal
+          result={modalTarget}
+          btcChangeP={state.btcChangeP}
+          onClose={() => setModalTarget(null)}
+          onSaved={handleEntrySaved}
+        />
+      )}
+
+      {/* Toast */}
+      {toast && (
+        <div className="fixed bottom-6 right-6 z-50 bg-green-900/80 border border-green-700 text-green-300 text-sm font-medium px-4 py-3 rounded-xl shadow-lg backdrop-blur-sm">
+          {toast}
+        </div>
+      )}
     </div>
   )
 }
