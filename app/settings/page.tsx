@@ -53,6 +53,8 @@ export default function SettingsPage() {
   const [toast, setToast]             = useState<string | null>(null)
   const [loaded, setLoaded]           = useState(false)
   const [paperSaving, setPaperSaving] = useState(false)
+  const [cleanupSymbol, setCleanupSymbol] = useState('')
+  const [cleaning, setCleaning]       = useState(false)
 
   useEffect(() => {
     setSettings(loadSettings())
@@ -254,6 +256,42 @@ export default function SettingsPage() {
           >
             {paperSaving ? '保存中...' : 'ペーパートレード設定を保存'}
           </button>
+        </div>
+
+        {/* 壊れたレコード削除 */}
+        <div className="bg-panel rounded-xl border border-red-900/40 p-5 mt-4">
+          <h2 className="font-semibold text-ink mb-1">ペーパートレード削除</h2>
+          <p className="text-xs text-ink-faint mb-3">壊れたレコードを銘柄名で一括削除します（例: SOL_USDT）</p>
+          <div className="flex gap-2">
+            <input
+              type="text"
+              value={cleanupSymbol}
+              onChange={(e) => setCleanupSymbol(e.target.value.toUpperCase())}
+              placeholder="SOL_USDT"
+              className="flex-1 bg-panel-raised border border-rim rounded-lg px-3 py-2 text-sm text-ink placeholder:text-ink-faint focus:outline-none focus:border-red-500/50 font-mono"
+            />
+            <button
+              disabled={!cleanupSymbol || cleaning}
+              onClick={async () => {
+                if (!cleanupSymbol) return
+                setCleaning(true)
+                try {
+                  const res  = await fetch(`/api/paper-trades?symbol=${encodeURIComponent(cleanupSymbol)}`, { method: 'DELETE' })
+                  const json = await res.json()
+                  if (json.success) showToast(`${cleanupSymbol} の ${json.deleted} 件を削除しました`)
+                  else showToast(`削除失敗: ${json.error}`)
+                  setCleanupSymbol('')
+                } catch {
+                  showToast('削除に失敗しました')
+                } finally {
+                  setCleaning(false)
+                }
+              }}
+              className="px-4 py-2 bg-red-800 hover:bg-red-700 disabled:bg-panel-raised disabled:text-ink-faint disabled:cursor-not-allowed rounded-lg text-sm font-medium text-white transition-colors"
+            >
+              {cleaning ? '削除中...' : '削除'}
+            </button>
+          </div>
         </div>
 
       </div>

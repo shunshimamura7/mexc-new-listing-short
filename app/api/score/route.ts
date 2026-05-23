@@ -27,9 +27,11 @@ export async function GET() {
       sendTelegramAlert(newAlerts).catch(() => {})
     }
 
-    // ペーパートレード自動エントリー（推奨対象 × スイートスポット24〜48h のみ）
+    // ペーパートレード自動エントリー
+    // 条件: crypto のみ / sweet（24-48h）/ short or consider / 既存大型コインは paper-auto-entry 内でも再チェック
     for (const r of data.results) {
       if (
+        r.symbolCategory === 'crypto' &&
         r.elapsedCategory === 'sweet' &&
         (r.recommendation === 'short' || r.recommendation === 'consider')
       ) {

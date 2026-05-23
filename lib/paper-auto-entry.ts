@@ -1,6 +1,7 @@
 import type { PaperTrade } from '@/types'
 import { ALL_PATTERNS, PATTERN_SPECS, calcSlPrice, calcTpPrice, calcLiqPrice } from '@/lib/trading-engine'
-import { loadPaperSettings, savePaperTrade, wasPaperTraded, markPaperTraded } from '@/lib/paper-storage'
+import { loadPaperSettings, savePaperTrade, wasPaperTraded, markPaperTraded, canEnterToday, incrementDailyEntryCount } from '@/lib/paper-storage'
+import { getTickerPrice, isEstablishedCoin } from '@/lib/mexc'
 import { buildEntryMessage, sendPaperTelegram } from '@/lib/paper-telegram'
 
 function makeId(): string {
@@ -23,6 +24,22 @@ export type AutoEntryResult =
 export async function runPaperAutoEntry(params: AutoEntryParams): Promise<AutoEntryResult> {
   const { symbol, currentPrice, score, pumpPct, snapshotFR, elapsedHours } = params
 
+  // ── 安全装置 1: 既存大型コイン除外 ────────────────────────────────────────
+  if (isEstablishedCoin(symbol)) {
+    return { skipped: true, reason: 'established_coin' }
+  }
+
+  // ── 安全装置 2: スイートスポット外除外（24〜48h のみ） ─────────────────────
+  if (elapsedHours < 24 || elapsedHours > 48) {
+    return { skipped: true, reason: `elapsed_out_of_range:${elapsedHours}h` }
+  }
+
+  // ── 安全装置 3: 初動ポンプ未達除外 ───────────────────────────────────────
+  if (pumpPct < 50) {
+    return { skipped: true, reason: `insufficient_pump:${pumpPct.toFixed(1)}%` }
+  }
+
+  // ── 安全装置 4: 重複エントリー防止 ───────────────────────────────────────
   if (await wasPaperTraded(symbol)) {
     return { skipped: true, reason: 'already_traded_24h' }
   }
@@ -30,6 +47,26 @@ export async function runPaperAutoEntry(params: AutoEntryParams): Promise<AutoEn
   const settings = await loadPaperSettings()
   if (!settings.autoEntry) {
     return { skipped: true, reason: 'auto_entry_disabled' }
+  }
+
+  // ── 安全装置 5: 1日あたり上限（5銘柄/日）────────────────────────────────
+  if (!(await canEnterToday())) {
+    return { skipped: true, reason: 'daily_cap_reached' }
+  }
+
+  // ── 安全装置 6: エントリー価格を ticker.lastPrice で再取得 ─────────────────
+  // score.ts の currentPrice は kline close を使っており stale な場合があるため
+  // エントリー直前に必ず最新価格を ticker から取得する
+  const freshPrice = await getTickerPrice(symbol)
+  if (freshPrice === null || freshPrice <= 0) {
+    return { skipped: true, reason: 'ticker_price_unavailable' }
+  }
+
+  // ── 安全装置 7: 異常価格検出（計算上の価格と ticker 価格が 10 倍以上乖離）──
+  const priceRatio = Math.max(freshPrice, currentPrice) / Math.min(freshPrice, currentPrice)
+  if (priceRatio > 10) {
+    console.warn(`[paper-auto-entry] PRICE_ANOMALY ${symbol}: score_price=${currentPrice} ticker_price=${freshPrice} ratio=${priceRatio.toFixed(1)}x — skipping`)
+    return { skipped: true, reason: `price_anomaly:ratio=${priceRatio.toFixed(1)}` }
   }
 
   const now       = new Date().toISOString()
@@ -50,20 +87,20 @@ export async function runPaperAutoEntry(params: AutoEntryParams): Promise<AutoEn
       leverage:    settings.leverage,
       capitalUsdt: settings.capitalUsdt,
 
-      lot1Price: currentPrice,
+      lot1Price: freshPrice,   // ticker.lastPrice（安全装置6で取得）
       lot1Time:  now,
       lot2Price:         null,
       lot2Time:          null,
       lot2ScheduledTime: lot2Scheduled,
-      avgEntryPrice:     currentPrice,
+      avgEntryPrice:     freshPrice,
 
       slPct:            spec.slPct,
       tpPct:            spec.tpPct,
       tp1Pct:           spec.tp1Pct,
-      slPrice:          calcSlPrice(currentPrice, spec.slPct),
-      tpPrice:          calcTpPrice(currentPrice, spec.tpPct),
-      tp1Price:         spec.tp1Pct !== null ? calcTpPrice(currentPrice, spec.tp1Pct) : null,
-      liquidationPrice: calcLiqPrice(currentPrice, settings.leverage),
+      slPrice:          calcSlPrice(freshPrice, spec.slPct),
+      tpPrice:          calcTpPrice(freshPrice, spec.tpPct),
+      tp1Price:         spec.tp1Pct !== null ? calcTpPrice(freshPrice, spec.tp1Pct) : null,
+      liquidationPrice: calcLiqPrice(freshPrice, settings.leverage),
 
       status: isB ? 'pending_lot2' : 'open',
 
@@ -92,6 +129,7 @@ export async function runPaperAutoEntry(params: AutoEntryParams): Promise<AutoEn
   await Promise.all([
     ...trades.map((t) => savePaperTrade(t)),
     markPaperTraded(symbol),
+    incrementDailyEntryCount(),
   ])
 
   const msg = buildEntryMessage(trades, score, pumpPct, elapsedHours, settings)

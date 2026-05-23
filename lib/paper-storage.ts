@@ -82,3 +82,55 @@ export async function loadOpenPaperTrades(): Promise<PaperTrade[]> {
   const items = await Promise.all(ids.map((id) => kv.get<PaperTrade>(`paper_trade:${id}`)))
   return items.filter((i): i is PaperTrade => i !== null)
 }
+
+// ── Delete ────────────────────────────────────────────────────────────────────
+export async function deletePaperTrade(id: string): Promise<void> {
+  if (!IS_KV) return
+  const kv = await db()
+  await Promise.all([
+    kv.del(`paper_trade:${id}`),
+    kv.srem('paper_trades:all',  id),
+    kv.srem('paper_trades:open', id),
+  ])
+}
+
+export async function deletePaperTradesBySymbol(symbol: string): Promise<number> {
+  if (!IS_KV) return 0
+  const kv   = await db()
+  const all  = await loadAllPaperTrades()
+  const targets = all.filter((t) => t.symbol === symbol)
+  if (!targets.length) return 0
+  await Promise.all(targets.map((t) => deletePaperTrade(t.id)))
+  return targets.length
+}
+
+// ── 1日あたり自動エントリー上限（JST 0時リセット） ──────────────────────────
+const DAILY_CAP = 5
+
+function todayKey(): string {
+  // UTC+9 の日付文字列をキーに使う
+  const d = new Date(Date.now() + 9 * 3_600_000)
+  return `paper_daily:${d.toISOString().slice(0, 10)}`
+}
+
+export async function getDailyEntryCount(): Promise<number> {
+  if (!IS_KV) return 0
+  const kv = await db()
+  const v  = await kv.get<number>(todayKey())
+  return v ?? 0
+}
+
+export async function canEnterToday(): Promise<boolean> {
+  const count = await getDailyEntryCount()
+  return count < DAILY_CAP
+}
+
+export async function incrementDailyEntryCount(): Promise<number> {
+  if (!IS_KV) return 0
+  const kv  = await db()
+  const key = todayKey()
+  const n   = await kv.incr(key)
+  // 初回のみTTLを48hに設定（翌日になっても当日分が消えないよう余裕を持つ）
+  if (n === 1) await kv.expire(key, 48 * 3600)
+  return n
+}

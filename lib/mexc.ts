@@ -108,7 +108,37 @@ const COMMODITY_PATTERNS: RegExp[] = [
   /^LEAD_/i,     // 鉛
   /^TIN_/i,      // スズ
   /_USD1$/i,     // USD1ペア (USDT 以外の別建てペア)
+  /^(SILVER|GOLD|PLATINUM|PALLADIUM|ALUMINUM|NICKEL|COPPER|ZINC|LEAD|TIN|IRON|STEEL|CORN|WHEAT|SOYBEAN|SUGAR|COTTON|COFFEE|COCOA|LUMBER|NATURALGAS|CRUDE)/i,
+  /^(JP225|US30|US500|US100|UK100|DE40|FR40|HK50|SOXX|XLE|EWJ|EWY)_/i,  // 株価指数ETF
 ]
+
+// 既存大型コイン（新規上場短期ショート戦略の対象外）
+const ESTABLISHED_BASE_COINS = new Set([
+  'BTC', 'ETH', 'SOL', 'BNB', 'XRP', 'ADA', 'DOGE', 'DOT', 'AVAX', 'MATIC',
+  'POL', 'LINK', 'UNI', 'AAVE', 'LTC', 'BCH', 'ETC', 'FIL', 'ATOM', 'ALGO',
+  'ICP', 'NEAR', 'APT', 'ARB', 'OP', 'SUI', 'SEI', 'TIA', 'PYTH', 'JUP',
+  'WIF', 'BONK', 'PEPE', 'SHIB', 'FLOKI', 'INJ', 'RUNE', 'EGLD', 'HBAR',
+  'VET', 'IOTA', 'ZIL', 'THETA', 'FTM', 'ONE', 'SAND', 'MANA', 'AXS',
+  'CHZ', 'ENJ', 'GALA', 'GMT', 'APE', 'LDO', 'RPL', 'SUSHI', 'CAKE',
+  'BAL', 'CRV', 'SNX', 'GRT', '1INCH', 'DYDX', 'GMX', 'PENDLE',
+  'MKR', 'COMP', 'YFI', 'BAT', 'ZRX', 'KNC', 'BAND', 'REN', 'STORJ',
+  'LUNA', 'LUNC', 'TRX', 'XLM', 'XMR', 'ZEC', 'DASH', 'WAVES', 'ICX',
+  'QTUM', 'ONT', 'ZEN', 'DCR', 'EOS', 'NANO', 'DGB', 'RVN', 'DENT',
+  'HOT', 'WIN', 'BTT', 'JST', 'SUN', 'KAVA', 'CELO', 'SKL', 'OCEAN',
+  'ANKR', 'CKB', 'CELR', 'CTSI', 'IOTX', 'OXT', 'NMR', 'AUDIO',
+  'RAY', 'OKB', 'HT', 'CRO', 'FTT', 'LEO', 'GT', 'MX', 'KCS',
+  'NEXO', 'WBTC', 'WETH', 'STETH', 'PAXG', 'XAUT',
+  'TAO', 'HYPE', 'WLD', 'BLUR', 'CFX', 'MINA', 'SSV', 'STX',
+  'ROSE', 'ACH', 'HIGH', 'T', 'GLMR', 'MOVR', 'ACA', 'PARA',
+  'ENA', 'ETHFI', 'REZ', 'BB', 'OMNI', 'ZK', 'STRK', 'ALT',
+  'MANTA', 'DYM', 'PIXEL', 'PORTAL', 'MEME', 'BOME', 'SLERF',
+  'TNSR', 'SAGA', 'AEVO', 'W', 'SAFE', 'SUPER', 'DRIFT',
+])
+
+export function isEstablishedCoin(symbol: string): boolean {
+  const base = symbol.replace(/_USDT$/, '').replace(/_USD1$/, '')
+  return ESTABLISHED_BASE_COINS.has(base.toUpperCase())
+}
 
 export function getSymbolCategory(symbol: string): 'crypto' | 'stock' | 'commodity' {
   if (STOCK_PATTERN.test(symbol)) return 'stock'

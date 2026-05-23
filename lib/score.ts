@@ -1,4 +1,4 @@
-import { getContractList, getKline, getTickers, recentContracts, getSymbolCategory } from './mexc'
+import { getContractList, getKline, getTickers, recentContracts, getSymbolCategory, isEstablishedCoin } from './mexc'
 import type { Kline, ScoreDetail, ScoreResult, ElapsedCategory } from '@/types'
 
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms))
@@ -92,18 +92,23 @@ export async function computeScores(days = 7): Promise<{
     const fundingRate  = tickerMap.get(symbol)?.fundingRate ?? 0
     const { score, detail, initialPumpPct, volRatio } = scoreOneListing(createTime, klines, fundingRate, btcChangeP)
 
-    const currentPrice  = klines[klines.length - 1].close
-    const elapsedHours  = Math.floor((Date.now() - createTime) / 3_600_000)
+    // ticker.lastPrice を優先、取れなければ kline 末尾 close にフォールバック
+    const tickerLastPrice = tickerMap.get(symbol)?.lastPrice
+    const currentPrice =
+      tickerLastPrice && parseFloat(tickerLastPrice) > 0
+        ? parseFloat(tickerLastPrice)
+        : klines[klines.length - 1].close
+
+    const elapsedHours   = Math.floor((Date.now() - createTime) / 3_600_000)
     const symbolCategory = getSymbolCategory(symbol)
 
     const elapsedCategory: ElapsedCategory =
       elapsedHours < 24  ? 'waiting' :
       elapsedHours <= 48 ? 'sweet'   : 'late'
 
-    // 推奨はポンプ50%未満なら問答無用で対象外
-    // 24〜48hのスイートスポット外は推奨しない
+    // 推奨除外条件: ポンプ不足 / 非crypto / 既存大型コイン
     let recommendation: ScoreResult['recommendation']
-    if (initialPumpPct < 50) {
+    if (initialPumpPct < 50 || symbolCategory !== 'crypto' || isEstablishedCoin(symbol)) {
       recommendation = 'excluded'
     } else if (elapsedCategory === 'sweet' && score >= 4) {
       recommendation = 'short'
