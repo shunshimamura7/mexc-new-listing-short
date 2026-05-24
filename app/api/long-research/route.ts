@@ -24,6 +24,8 @@ export interface CoinAnalysis {
   listingPriceMexc: number | null
   listingPriceStock: number | null
   listingPremium: number | null
+  longEdge: boolean   // 割安上場（premium < -5%）かつ相関0.6以上
+  shortEdge: boolean  // 割高上場（premium > +10%）かつ相関0.6以上
 }
 
 export interface CategorySummary {
@@ -41,6 +43,8 @@ export interface CategorySummary {
   avgListingPremium: number | null
   undervalued: number
   overvalued: number
+  longEdgeCount: number
+  shortEdgeCount: number
 }
 
 export interface LongResearchData {
@@ -80,6 +84,8 @@ function calcRange(
   return { range, pump: Math.max(pump, 0), dump: Math.max(dump, 0) }
 }
 
+const PREMIUM_ANOMALY_THRESHOLD = 500
+
 function summarize(coins: CoinAnalysis[]): CategorySummary {
   const n = coins.length
   if (n === 0) {
@@ -88,13 +94,17 @@ function summarize(coins: CoinAnalysis[]): CategorySummary {
       trendUp: 0, trendDown: 0, trendFlat: 0,
       correlationCount: 0, strongCorrelation: 0, avgCorrelation: null,
       avgListingPremium: null, undervalued: 0, overvalued: 0,
+      longEdgeCount: 0, shortEdgeCount: 0,
     }
   }
   const avg = (arr: number[]) => arr.reduce((s, v) => s + v, 0) / arr.length
   const withCorr    = coins.filter((c) => c.correlation !== null)
   const corrValues  = withCorr.map((c) => c.correlation as number)
-  const withPremium = coins.filter((c) => c.listingPremium !== null)
-  const premValues  = withPremium.map((c) => c.listingPremium as number)
+  // 異常値（|premium| > 500%）を集計から除外
+  const withPremium = coins.filter(
+    (c) => c.listingPremium !== null && Math.abs(c.listingPremium) <= PREMIUM_ANOMALY_THRESHOLD
+  )
+  const premValues = withPremium.map((c) => c.listingPremium as number)
   return {
     count:            n,
     avgRange24h:      avg(coins.map((c) => c.range24h)),
@@ -110,14 +120,23 @@ function summarize(coins: CoinAnalysis[]): CategorySummary {
     avgListingPremium: premValues.length > 0 ? avg(premValues) : null,
     undervalued:      withPremium.filter((c) => (c.listingPremium as number) <= -5).length,
     overvalued:       withPremium.filter((c) => (c.listingPremium as number) >= 5).length,
+    longEdgeCount:    coins.filter((c) => c.longEdge).length,
+    shortEdgeCount:   coins.filter((c) => c.shortEdge).length,
   }
+}
+
+const NULL_YAHOO: Pick<CoinAnalysis, 'ticker' | 'correlation' | 'stockTrend' | 'stockChange' | 'listingPriceMexc' | 'listingPriceStock' | 'listingPremium' | 'longEdge' | 'shortEdge'> = {
+  ticker: null, correlation: null, stockTrend: null, stockChange: null,
+  listingPriceMexc: null, listingPriceStock: null, listingPremium: null,
+  longEdge: false, shortEdge: false,
 }
 
 export async function GET() {
   try {
     const all = await loadAllListings()
 
-    const stockRaw: { listing: typeof all[0]; base: Omit<CoinAnalysis, 'ticker' | 'correlation' | 'stockTrend' | 'stockChange' | 'listingPriceMexc' | 'listingPriceStock' | 'listingPremium'> }[] = []
+    type BaseFields = Omit<CoinAnalysis, keyof typeof NULL_YAHOO>
+    const stockRaw: { listing: typeof all[0]; base: BaseFields }[] = []
     const commodity_metal: CoinAnalysis[]  = []
     const commodity_energy: CoinAnalysis[] = []
 
@@ -135,12 +154,11 @@ export async function GET() {
       const { range: range48h } = calcRange(klines, 0, 48, initialPrice)
       const { range: range72h } = calcRange(klines, 0, 72, initialPrice)
 
-      const trendThreshold = 2
       const trendPct = initialPrice > 0 ? ((finalPrice - initialPrice) / initialPrice) * 100 : 0
       const trend: 'up' | 'down' | 'flat' =
-        trendPct >= trendThreshold ? 'up' : trendPct <= -trendThreshold ? 'down' : 'flat'
+        trendPct >= 2 ? 'up' : trendPct <= -2 ? 'down' : 'flat'
 
-      const base = {
+      const base: BaseFields = {
         symbol: listing.symbol, listingTime: new Date(listing.listingTime).toISOString(),
         category, klineCount: klines.length,
         pump24h, dump24h, range24h, range48h, range72h,
@@ -150,7 +168,7 @@ export async function GET() {
       if (category === 'stock') {
         stockRaw.push({ listing, base })
       } else {
-        const coin: CoinAnalysis = { ...base, ticker: null, correlation: null, stockTrend: null, stockChange: null, listingPriceMexc: null, listingPriceStock: null, listingPremium: null }
+        const coin: CoinAnalysis = { ...base, ...NULL_YAHOO }
         if (isMetal(listing.symbol)) commodity_metal.push(coin)
         else commodity_energy.push(coin)
       }
@@ -160,9 +178,7 @@ export async function GET() {
     const stockResults = await Promise.allSettled(
       stockRaw.map(async ({ listing, base }) => {
         const ticker = extractTicker(listing.symbol)
-        if (!ticker) {
-          return { ...base, ticker: null, correlation: null, stockTrend: null, stockChange: null, listingPriceMexc: null, listingPriceStock: null, listingPremium: null } as CoinAnalysis
-        }
+        if (!ticker) return { ...base, ...NULL_YAHOO } as CoinAnalysis
 
         const from = new Date(listing.listingTime)
         const to   = new Date(listing.listingTime + 72 * 60 * 60 * 1000)
@@ -190,7 +206,6 @@ export async function GET() {
             }
           }
 
-          // 上場乖離率：MEXC上場価格 vs 上場日の株価
           const mexcOpen = listing.klines[0]?.open || listing.klines[0]?.close || 0
           if (mexcOpen > 0 && firstClose > 0) {
             listingPriceMexc  = mexcOpen
@@ -199,14 +214,21 @@ export async function GET() {
           }
         }
 
-        return { ...base, ticker, correlation, stockTrend, stockChange, listingPriceMexc, listingPriceStock, listingPremium } as CoinAnalysis
+        const corr = correlation ?? 0
+        const prem = listingPremium ?? 0
+        const longEdge  = prem < -5  && corr >= 0.6
+        const shortEdge = prem > 10  && corr >= 0.6
+
+        return {
+          ...base, ticker, correlation, stockTrend, stockChange,
+          listingPriceMexc, listingPriceStock, listingPremium,
+          longEdge, shortEdge,
+        } as CoinAnalysis
       })
     )
 
     const stock: CoinAnalysis[] = stockResults.map((r, i) =>
-      r.status === 'fulfilled'
-        ? r.value
-        : { ...stockRaw[i].base, ticker: null, correlation: null, stockTrend: null, stockChange: null, listingPriceMexc: null, listingPriceStock: null, listingPremium: null }
+      r.status === 'fulfilled' ? r.value : { ...stockRaw[i].base, ...NULL_YAHOO }
     )
 
     const data: LongResearchData = {

@@ -139,6 +139,16 @@ function SummaryCard({ label, summary, isStock }: { label: string; summary: Cate
           </span>
         </div>
       )}
+      {isStock && (summary.longEdgeCount > 0 || summary.shortEdgeCount > 0) && (
+        <div className="flex flex-col gap-0.5 border-t border-rim pt-2">
+          <span className="text-ink-faint text-[10px] mb-0.5">エッジ候補</span>
+          <span className="text-[10px]">
+            <span className="text-green-400">📈 ロング {summary.longEdgeCount}件</span>
+            <span className="text-ink-faint"> / </span>
+            <span className="text-red-400">📉 ショート {summary.shortEdgeCount}件</span>
+          </span>
+        </div>
+      )}
       {summary.count > 0 && (
         <div>
           <p className="text-ink-faint text-[10px] mb-1">トレンド方向</p>
@@ -229,6 +239,7 @@ function StockTable({ coins }: { coins: CoinAnalysis[] }) {
             <Th k="listingPremium" label="上場乖離率" />
             <Th k="correlation"    label="相関係数" />
             <Th k="stockChange"    label="株価変化" />
+            <th className="pb-2 pr-3 text-center font-normal text-ink-faint">エッジ</th>
             <Th k="klineCount"     label="kline本数" />
           </tr>
         </thead>
@@ -264,6 +275,11 @@ function StockTable({ coins }: { coins: CoinAnalysis[] }) {
                     </span>
                   : <span className="text-ink-faint">—</span>
                 }
+              </td>
+              <td className="py-1.5 pr-3 text-center text-xs">
+                {c.longEdge  ? <span className="text-green-400">📈 ロング</span>  :
+                 c.shortEdge ? <span className="text-red-400">📉 ショート</span> :
+                 <span className="text-ink-faint">—</span>}
               </td>
               <td className="py-1.5 text-right font-mono text-ink-faint">{c.klineCount}</td>
             </tr>
