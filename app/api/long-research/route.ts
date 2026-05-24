@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { loadAllListings } from '@/lib/storage'
 import { getSymbolCategory } from '@/lib/mexc'
+import { extractTicker, getStockHistory, calcCorrelation } from '@/lib/yahoo-finance'
 import type { SymbolCategory } from '@/types'
 
 export interface CoinAnalysis {
@@ -16,6 +17,10 @@ export interface CoinAnalysis {
   trend: 'up' | 'down' | 'flat'
   initialPrice: number
   finalPrice: number
+  ticker: string | null
+  correlation: number | null
+  stockTrend: 'up' | 'down' | 'flat' | null
+  stockChange: number | null
 }
 
 export interface CategorySummary {
@@ -27,6 +32,9 @@ export interface CategorySummary {
   trendUp: number
   trendDown: number
   trendFlat: number
+  correlationCount: number
+  strongCorrelation: number
+  avgCorrelation: number | null
 }
 
 export interface LongResearchData {
@@ -46,41 +54,50 @@ const METAL_PATTERNS = [
   /^(SILVER|GOLD|PLATINUM|PALLADIUM|ALUMINUM|NICKEL|COPPER|ZINC|LEAD|TIN|IRON|STEEL)/i,
 ]
 
-const ENERGY_PATTERNS = [
-  /OIL_/i, /^WTI/i, /^BRENT/i,
-  /^(NATURALGAS|CRUDE)/i,
-  /^(CORN|WHEAT|SOYBEAN|SUGAR|COTTON|COFFEE|COCOA|LUMBER)/i,
-  /^(JP225|US30|US500|US100|UK100|DE40|FR40|HK50|SOXX|XLE|EWJ|EWY)_/i,
-]
-
 function isMetal(symbol: string): boolean {
   return METAL_PATTERNS.some((p) => p.test(symbol))
 }
 
-function calcRange(klines: { high: number; low: number; open: number; close: number }[], from: number, to: number, basePrice: number): { range: number; pump: number; dump: number } {
+function calcRange(
+  klines: { high: number; low: number; open: number; close: number }[],
+  from: number,
+  to: number,
+  basePrice: number
+): { range: number; pump: number; dump: number } {
   const slice = klines.slice(from, to)
   if (!slice.length || basePrice <= 0) return { range: 0, pump: 0, dump: 0 }
   const maxHigh = Math.max(...slice.map((k) => k.high))
   const minLow  = Math.min(...slice.map((k) => k.low))
-  const pump = ((maxHigh - basePrice) / basePrice) * 100
-  const dump = ((basePrice - minLow)  / basePrice) * 100
-  const range = ((maxHigh - minLow)   / basePrice) * 100
+  const pump  = ((maxHigh - basePrice) / basePrice) * 100
+  const dump  = ((basePrice - minLow)  / basePrice) * 100
+  const range = ((maxHigh - minLow)    / basePrice) * 100
   return { range, pump: Math.max(pump, 0), dump: Math.max(dump, 0) }
 }
 
 function summarize(coins: CoinAnalysis[]): CategorySummary {
   const n = coins.length
-  if (n === 0) return { count: 0, avgRange24h: 0, avgRange48h: 0, avgPump24h: 0, avgDump24h: 0, trendUp: 0, trendDown: 0, trendFlat: 0 }
+  if (n === 0) {
+    return {
+      count: 0, avgRange24h: 0, avgRange48h: 0, avgPump24h: 0, avgDump24h: 0,
+      trendUp: 0, trendDown: 0, trendFlat: 0,
+      correlationCount: 0, strongCorrelation: 0, avgCorrelation: null,
+    }
+  }
   const avg = (arr: number[]) => arr.reduce((s, v) => s + v, 0) / arr.length
+  const withCorr = coins.filter((c) => c.correlation !== null)
+  const corrValues = withCorr.map((c) => c.correlation as number)
   return {
-    count: n,
-    avgRange24h: avg(coins.map((c) => c.range24h)),
-    avgRange48h: avg(coins.map((c) => c.range48h)),
-    avgPump24h:  avg(coins.map((c) => c.pump24h)),
-    avgDump24h:  avg(coins.map((c) => c.dump24h)),
-    trendUp:     coins.filter((c) => c.trend === 'up').length,
-    trendDown:   coins.filter((c) => c.trend === 'down').length,
-    trendFlat:   coins.filter((c) => c.trend === 'flat').length,
+    count:            n,
+    avgRange24h:      avg(coins.map((c) => c.range24h)),
+    avgRange48h:      avg(coins.map((c) => c.range48h)),
+    avgPump24h:       avg(coins.map((c) => c.pump24h)),
+    avgDump24h:       avg(coins.map((c) => c.dump24h)),
+    trendUp:          coins.filter((c) => c.trend === 'up').length,
+    trendDown:        coins.filter((c) => c.trend === 'down').length,
+    trendFlat:        coins.filter((c) => c.trend === 'flat').length,
+    correlationCount: withCorr.length,
+    strongCorrelation: withCorr.filter((c) => Math.abs(c.correlation as number) >= 0.6).length,
+    avgCorrelation:   corrValues.length > 0 ? avg(corrValues) : null,
   }
 }
 
@@ -88,8 +105,8 @@ export async function GET() {
   try {
     const all = await loadAllListings()
 
-    const stock: CoinAnalysis[]          = []
-    const commodity_metal: CoinAnalysis[] = []
+    const stockRaw: { listing: typeof all[0]; base: Omit<CoinAnalysis, 'ticker' | 'correlation' | 'stockTrend' | 'stockChange'> }[] = []
+    const commodity_metal: CoinAnalysis[]  = []
     const commodity_energy: CoinAnalysis[] = []
 
     for (const listing of all) {
@@ -111,37 +128,68 @@ export async function GET() {
       const trend: 'up' | 'down' | 'flat' =
         trendPct >= trendThreshold ? 'up' : trendPct <= -trendThreshold ? 'down' : 'flat'
 
-      const coin: CoinAnalysis = {
-        symbol:      listing.symbol,
-        listingTime: new Date(listing.listingTime).toISOString(),
-        category,
-        klineCount:  klines.length,
-        pump24h,
-        dump24h,
-        range24h,
-        range48h,
-        range72h,
-        trend,
-        initialPrice,
-        finalPrice,
+      const base = {
+        symbol: listing.symbol, listingTime: new Date(listing.listingTime).toISOString(),
+        category, klineCount: klines.length,
+        pump24h, dump24h, range24h, range48h, range72h,
+        trend, initialPrice, finalPrice,
       }
 
       if (category === 'stock') {
-        stock.push(coin)
-      } else if (isMetal(listing.symbol)) {
-        commodity_metal.push(coin)
+        stockRaw.push({ listing, base })
       } else {
-        commodity_energy.push(coin)
+        const coin: CoinAnalysis = { ...base, ticker: null, correlation: null, stockTrend: null, stockChange: null }
+        if (isMetal(listing.symbol)) commodity_metal.push(coin)
+        else commodity_energy.push(coin)
       }
     }
+
+    // Yahoo Finance: STOCK銘柄のみ並列取得（失敗しても止めない）
+    const stockResults = await Promise.allSettled(
+      stockRaw.map(async ({ listing, base }) => {
+        const ticker = extractTicker(listing.symbol)
+        if (!ticker) {
+          return { ...base, ticker: null, correlation: null, stockTrend: null, stockChange: null } as CoinAnalysis
+        }
+
+        const from = new Date(listing.listingTime)
+        const to   = new Date(listing.listingTime + 72 * 60 * 60 * 1000)
+        const history = await getStockHistory(ticker, from, to)
+
+        let correlation: number | null = null
+        let stockTrend: CoinAnalysis['stockTrend'] = null
+        let stockChange: number | null = null
+
+        if (history && history.length >= 2) {
+          correlation = calcCorrelation(
+            listing.klines.map((k) => ({ time: k.time, close: k.close })),
+            history
+          )
+          const firstClose = history[0].close
+          const lastClose  = history[history.length - 1].close
+          if (firstClose > 0) {
+            stockChange = ((lastClose - firstClose) / firstClose) * 100
+            stockTrend  = stockChange >= 2 ? 'up' : stockChange <= -2 ? 'down' : 'flat'
+          }
+        }
+
+        return { ...base, ticker, correlation, stockTrend, stockChange } as CoinAnalysis
+      })
+    )
+
+    const stock: CoinAnalysis[] = stockResults.map((r, i) =>
+      r.status === 'fulfilled'
+        ? r.value
+        : { ...stockRaw[i].base, ticker: null, correlation: null, stockTrend: null, stockChange: null }
+    )
 
     const data: LongResearchData = {
       stock,
       commodity_metal,
       commodity_energy,
       summary: {
-        stock:           summarize(stock),
-        commodity_metal: summarize(commodity_metal),
+        stock:            summarize(stock),
+        commodity_metal:  summarize(commodity_metal),
         commodity_energy: summarize(commodity_energy),
       },
     }
