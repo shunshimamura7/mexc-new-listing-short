@@ -34,7 +34,7 @@ export async function GET(req: NextRequest) {
       listingTime: number
       elapsedHours: number
       initialPumpPct: number
-      category: string
+      category: 'crypto' | 'stock' | 'commodity'
       isEstablished: boolean
       isDeduped: boolean
       pass_naming: boolean
