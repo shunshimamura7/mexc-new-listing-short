@@ -15,11 +15,5 @@
     "app/api/stock-signal/route.ts":               { "maxDuration": 60 },
     "app/api/stock-signal/entry/route.ts":         { "maxDuration": 30 },
     "app/api/stock-signal/check/route.ts":         { "maxDuration": 30 }
-  },
-  "crons": [
-    {
-      "path": "/api/stock-signal/check",
-      "schedule": "0 0 * * *"
-    }
-  ]
+  }
 }
