@@ -5,11 +5,12 @@ import { usePathname } from 'next/navigation'
 import { useEffect, useState } from 'react'
 
 const NAV_LINKS = [
-  { href: '/score',    label: 'スコアリング' },
-  { href: '/collect',  label: 'データ収集' },
-  { href: '/backtest', label: 'バックテスト' },
-  { href: '/trades',   label: 'マイトレード' },
-  { href: '/settings', label: '設定' },
+  { href: '/score',         label: 'スコアリング' },
+  { href: '/collect',       label: 'データ収集' },
+  { href: '/backtest',      label: 'バックテスト' },
+  { href: '/trades',        label: 'マイトレード' },
+  { href: '/long-research', label: 'ロング検証 🧪' },
+  { href: '/settings',      label: '設定' },
 ]
 
 export function Header() {

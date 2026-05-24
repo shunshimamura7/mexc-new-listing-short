@@ -36,6 +36,8 @@ export type BacktestParams = {
   minFR: number          // % 単位 (e.g., 0.1 = 0.1%)。保存値は小数なので比較時に /100 する
   excludeStock: boolean  // シンボル名に "STOCK" を含む銘柄を除外
   stockOnly: boolean     // STOCK銘柄のみ対象
+  excludeCommodity?: boolean      // コモディティ銘柄を除外
+  categoryFilter?: SymbolCategory // 指定カテゴリのみ対象（crypto/stock/commodity）
 }
 
 export type TradeOutcome = 'tp' | 'sl' | 'forced'
@@ -93,7 +95,7 @@ export type GridSearchResult = {
   tradeCount: number
 }
 
-export type FilterParams = Pick<BacktestParams, 'minPumpPct' | 'minFdvMcRatio' | 'minFR' | 'excludeStock' | 'stockOnly'>
+export type FilterParams = Pick<BacktestParams, 'minPumpPct' | 'minFdvMcRatio' | 'minFR' | 'excludeStock' | 'stockOnly' | 'excludeCommodity' | 'categoryFilter'>
 
 export type MexcContract = {
   symbol: string

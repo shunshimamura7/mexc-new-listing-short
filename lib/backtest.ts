@@ -1,3 +1,4 @@
+import { getSymbolCategory } from './mexc'
 import type {
   ListingData,
   BacktestParams,
@@ -19,9 +20,13 @@ export const GS_TP_RANGE = [10, 20, 30, 40, 50, 60, 70]                   //  7�
 
 function applyFilters(listings: ListingData[], params: FilterParams): ListingData[] {
   return listings.filter((l) => {
-    const isStock = l.symbol.includes('STOCK')
-    if (params.excludeStock && isStock) return false
-    if (params.stockOnly && !isStock) return false
+    const category = getSymbolCategory(l.symbol)
+    // 後方互換: excludeStock / stockOnly（文字列マッチから category ベースに統一）
+    if (params.excludeStock && category === 'stock') return false
+    if (params.stockOnly && category !== 'stock') return false
+    // 新フィルター
+    if (params.excludeCommodity && category === 'commodity') return false
+    if (params.categoryFilter && params.categoryFilter !== category) return false
     if (params.minPumpPct > 0 && l.initialPumpPct < params.minPumpPct) return false
     // fdvMcRatio は現状すべて0のためスキップ
     if (params.minFdvMcRatio > 0 && l.fdvMcRatio > 0 && l.fdvMcRatio < params.minFdvMcRatio) return false
