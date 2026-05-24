@@ -7,6 +7,32 @@ export function extractTicker(mexcSymbol: string): string | null {
   return match ? match[1].toUpperCase() : null
 }
 
+// コモディティのMEXCシンボル → Yahoo Financeティッカー変換
+const COMMODITY_TICKER_MAP: Record<string, string> = {
+  // 貴金属
+  'XAU': 'GC=F', 'XAG': 'SI=F', 'XPT': 'PL=F', 'XPD': 'PA=F',
+  'GOLD': 'GC=F', 'SILVER': 'SI=F', 'PLATINUM': 'PL=F', 'PALLADIUM': 'PA=F',
+  // エネルギー
+  'OIL': 'CL=F', 'WTI': 'CL=F', 'CRUDEOIL': 'CL=F',
+  'BRENT': 'BZ=F', 'NATURALGAS': 'NG=F',
+  // 産業金属
+  'COPPER': 'HG=F', 'ALUMINUM': 'ALI=F',
+  'NICKEL': 'NI=F', 'ZINC': 'ZNC=F', 'LEAD': 'LL=F', 'TIN': 'SN=F',
+  // 農産物
+  'CORN': 'ZC=F', 'WHEAT': 'ZW=F', 'SOYBEAN': 'ZS=F',
+  'SUGAR': 'SB=F', 'COFFEE': 'KC=F', 'COTTON': 'CT=F',
+  'COCOA': 'CC=F', 'LUMBER': 'LBR=F',
+  // 株価指数
+  'US30': 'YM=F', 'US500': 'ES=F', 'US100': 'NQ=F',
+  'JP225': 'NIY=F', 'UK100': 'Z=F', 'DE40': 'FDAX',
+  'FR40': 'FCE=F', 'HK50': 'HSI=F',
+}
+
+export function extractCommodityTicker(mexcSymbol: string): string | null {
+  const base = mexcSymbol.replace(/_USDT$/i, '').replace(/_USD1$/i, '')
+  return COMMODITY_TICKER_MAP[base.toUpperCase()] ?? null
+}
+
 export async function getStockHistory(
   ticker: string,
   from: Date,

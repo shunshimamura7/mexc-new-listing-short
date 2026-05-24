@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import { loadAllListings } from '@/lib/storage'
 import { getSymbolCategory } from '@/lib/mexc'
-import { extractTicker, getStockHistory, calcCorrelation } from '@/lib/yahoo-finance'
+import { extractTicker, extractCommodityTicker, getStockHistory, calcCorrelation } from '@/lib/yahoo-finance'
 import type { SymbolCategory } from '@/types'
 
 export interface CoinAnalysis {
@@ -24,8 +24,8 @@ export interface CoinAnalysis {
   listingPriceMexc: number | null
   listingPriceStock: number | null
   listingPremium: number | null
-  longEdge: boolean   // 割安上場（premium < -5%）かつ相関0.6以上
-  shortEdge: boolean  // 割高上場（premium > +10%）かつ相関0.6以上
+  longEdge: boolean
+  shortEdge: boolean
 }
 
 export interface CategorySummary {
@@ -100,7 +100,6 @@ function summarize(coins: CoinAnalysis[]): CategorySummary {
   const avg = (arr: number[]) => arr.reduce((s, v) => s + v, 0) / arr.length
   const withCorr    = coins.filter((c) => c.correlation !== null)
   const corrValues  = withCorr.map((c) => c.correlation as number)
-  // 異常値（|premium| > 500%）を集計から除外
   const withPremium = coins.filter(
     (c) => c.listingPremium !== null && Math.abs(c.listingPremium) <= PREMIUM_ANOMALY_THRESHOLD
   )
@@ -125,20 +124,78 @@ function summarize(coins: CoinAnalysis[]): CategorySummary {
   }
 }
 
-const NULL_YAHOO: Pick<CoinAnalysis, 'ticker' | 'correlation' | 'stockTrend' | 'stockChange' | 'listingPriceMexc' | 'listingPriceStock' | 'listingPremium' | 'longEdge' | 'shortEdge'> = {
+const NULL_YAHOO: Pick<CoinAnalysis,
+  'ticker' | 'correlation' | 'stockTrend' | 'stockChange' |
+  'listingPriceMexc' | 'listingPriceStock' | 'listingPremium' |
+  'longEdge' | 'shortEdge'
+> = {
   ticker: null, correlation: null, stockTrend: null, stockChange: null,
   listingPriceMexc: null, listingPriceStock: null, listingPremium: null,
   longEdge: false, shortEdge: false,
+}
+
+type BaseFields = Omit<CoinAnalysis, keyof typeof NULL_YAHOO>
+
+async function fetchYahooFields(
+  listing: { listingTime: number; klines: { time: number; open: number; close: number }[] },
+  ticker: string
+): Promise<typeof NULL_YAHOO> {
+  const from = new Date(listing.listingTime)
+  const to   = new Date(listing.listingTime + 72 * 60 * 60 * 1000)
+  const history = await getStockHistory(ticker, from, to)
+
+  let correlation: number | null       = null
+  let stockTrend: CoinAnalysis['stockTrend'] = null
+  let stockChange: number | null       = null
+  let listingPriceMexc: number | null  = null
+  let listingPriceStock: number | null = null
+  let listingPremium: number | null    = null
+
+  if (history && history.length >= 1) {
+    const firstClose = history[0].close
+    const lastClose  = history[history.length - 1].close
+
+    if (history.length >= 2) {
+      correlation = calcCorrelation(
+        listing.klines.map((k) => ({ time: k.time, close: k.close })),
+        history
+      )
+      if (firstClose > 0) {
+        stockChange = ((lastClose - firstClose) / firstClose) * 100
+        stockTrend  = stockChange >= 2 ? 'up' : stockChange <= -2 ? 'down' : 'flat'
+      }
+    }
+
+    const mexcOpen = listing.klines[0]?.open || listing.klines[0]?.close || 0
+    if (mexcOpen > 0 && firstClose > 0) {
+      listingPriceMexc  = mexcOpen
+      listingPriceStock = firstClose
+      listingPremium    = ((mexcOpen - firstClose) / firstClose) * 100
+    }
+  }
+
+  const corr = correlation ?? 0
+  const prem = listingPremium ?? 0
+  return {
+    ticker,
+    correlation,
+    stockTrend,
+    stockChange,
+    listingPriceMexc,
+    listingPriceStock,
+    listingPremium,
+    longEdge:  prem < -5  && corr >= 0.6,
+    shortEdge: prem > 10  && corr >= 0.6,
+  }
 }
 
 export async function GET() {
   try {
     const all = await loadAllListings()
 
-    type BaseFields = Omit<CoinAnalysis, keyof typeof NULL_YAHOO>
-    const stockRaw: { listing: typeof all[0]; base: BaseFields }[] = []
-    const commodity_metal: CoinAnalysis[]  = []
-    const commodity_energy: CoinAnalysis[] = []
+    const stockRaw:     { listing: typeof all[0]; base: BaseFields }[] = []
+    const commMetalRaw: { listing: typeof all[0]; base: BaseFields }[] = []
+    const commEnergyRaw:{ listing: typeof all[0]; base: BaseFields }[] = []
 
     for (const listing of all) {
       const category = getSymbolCategory(listing.symbol)
@@ -167,69 +224,44 @@ export async function GET() {
 
       if (category === 'stock') {
         stockRaw.push({ listing, base })
+      } else if (isMetal(listing.symbol)) {
+        commMetalRaw.push({ listing, base })
       } else {
-        const coin: CoinAnalysis = { ...base, ...NULL_YAHOO }
-        if (isMetal(listing.symbol)) commodity_metal.push(coin)
-        else commodity_energy.push(coin)
+        commEnergyRaw.push({ listing, base })
       }
     }
 
-    // Yahoo Finance: STOCK銘柄のみ並列取得（失敗しても止めない）
-    const stockResults = await Promise.allSettled(
-      stockRaw.map(async ({ listing, base }) => {
-        const ticker = extractTicker(listing.symbol)
-        if (!ticker) return { ...base, ...NULL_YAHOO } as CoinAnalysis
+    // Yahoo Finance 並列取得（失敗しても止めない）
+    const [stockResults, metalResults, energyResults] = await Promise.all([
+      Promise.allSettled(
+        stockRaw.map(({ listing, base }) => {
+          const ticker = extractTicker(listing.symbol)
+          if (!ticker) return Promise.resolve({ ...base, ...NULL_YAHOO } as CoinAnalysis)
+          return fetchYahooFields(listing, ticker).then((yf) => ({ ...base, ...yf } as CoinAnalysis))
+        })
+      ),
+      Promise.allSettled(
+        commMetalRaw.map(({ listing, base }) => {
+          const ticker = extractCommodityTicker(listing.symbol)
+          if (!ticker) return Promise.resolve({ ...base, ...NULL_YAHOO } as CoinAnalysis)
+          return fetchYahooFields(listing, ticker).then((yf) => ({ ...base, ...yf } as CoinAnalysis))
+        })
+      ),
+      Promise.allSettled(
+        commEnergyRaw.map(({ listing, base }) => {
+          const ticker = extractCommodityTicker(listing.symbol)
+          if (!ticker) return Promise.resolve({ ...base, ...NULL_YAHOO } as CoinAnalysis)
+          return fetchYahooFields(listing, ticker).then((yf) => ({ ...base, ...yf } as CoinAnalysis))
+        })
+      ),
+    ])
 
-        const from = new Date(listing.listingTime)
-        const to   = new Date(listing.listingTime + 72 * 60 * 60 * 1000)
-        const history = await getStockHistory(ticker, from, to)
+    const resolve = (results: PromiseSettledResult<CoinAnalysis>[], raws: { base: BaseFields }[]): CoinAnalysis[] =>
+      results.map((r, i) => r.status === 'fulfilled' ? r.value : { ...raws[i].base, ...NULL_YAHOO })
 
-        let correlation: number | null       = null
-        let stockTrend: CoinAnalysis['stockTrend'] = null
-        let stockChange: number | null       = null
-        let listingPriceMexc: number | null  = null
-        let listingPriceStock: number | null = null
-        let listingPremium: number | null    = null
-
-        if (history && history.length >= 1) {
-          const firstClose = history[0].close
-          const lastClose  = history[history.length - 1].close
-
-          if (history.length >= 2) {
-            correlation = calcCorrelation(
-              listing.klines.map((k) => ({ time: k.time, close: k.close })),
-              history
-            )
-            if (firstClose > 0) {
-              stockChange = ((lastClose - firstClose) / firstClose) * 100
-              stockTrend  = stockChange >= 2 ? 'up' : stockChange <= -2 ? 'down' : 'flat'
-            }
-          }
-
-          const mexcOpen = listing.klines[0]?.open || listing.klines[0]?.close || 0
-          if (mexcOpen > 0 && firstClose > 0) {
-            listingPriceMexc  = mexcOpen
-            listingPriceStock = firstClose
-            listingPremium    = ((mexcOpen - firstClose) / firstClose) * 100
-          }
-        }
-
-        const corr = correlation ?? 0
-        const prem = listingPremium ?? 0
-        const longEdge  = prem < -5  && corr >= 0.6
-        const shortEdge = prem > 10  && corr >= 0.6
-
-        return {
-          ...base, ticker, correlation, stockTrend, stockChange,
-          listingPriceMexc, listingPriceStock, listingPremium,
-          longEdge, shortEdge,
-        } as CoinAnalysis
-      })
-    )
-
-    const stock: CoinAnalysis[] = stockResults.map((r, i) =>
-      r.status === 'fulfilled' ? r.value : { ...stockRaw[i].base, ...NULL_YAHOO }
-    )
+    const stock           = resolve(stockResults,  stockRaw)
+    const commodity_metal  = resolve(metalResults,  commMetalRaw)
+    const commodity_energy = resolve(energyResults, commEnergyRaw)
 
     const data: LongResearchData = {
       stock,

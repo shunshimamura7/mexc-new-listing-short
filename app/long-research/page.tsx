@@ -49,10 +49,10 @@ function Verdict({ avg24h }: { avg24h: number }) {
   )
 }
 
-// ---- Correlation Insight Banner (STOCKタブのみ) ----
+// ---- Correlation Insight Banner ----
 function CorrelationInsight({ summary }: { summary: CategorySummary }) {
   if (summary.correlationCount === 0) return null
-  const ratio = summary.strongCorrelation / summary.correlationCount
+  const ratio   = summary.strongCorrelation / summary.correlationCount
   const avgCorr = summary.avgCorrelation ?? 0
 
   if (ratio >= 0.5) {
@@ -60,9 +60,9 @@ function CorrelationInsight({ summary }: { summary: CategorySummary }) {
       <div className="rounded-lg border border-blue-500/30 bg-blue-950/20 px-4 py-3 flex items-center gap-3">
         <span className="text-lg">📈</span>
         <div>
-          <p className="text-blue-400 font-medium text-sm">株価との連動性が高い・上場タイミングと原資産トレンドが重要</p>
+          <p className="text-blue-400 font-medium text-sm">原資産との連動性が高い・上場タイミングと原資産トレンドが重要</p>
           <p className="text-ink-faint text-xs mt-0.5">
-            強相関({'>'}=0.6): {summary.strongCorrelation}/{summary.correlationCount}件、平均相関係数 {fmt2(avgCorr)}
+            強相関(≥0.6): {summary.strongCorrelation}/{summary.correlationCount}件、平均相関係数 {fmt2(avgCorr)}
           </p>
         </div>
       </div>
@@ -73,9 +73,9 @@ function CorrelationInsight({ summary }: { summary: CategorySummary }) {
       <div className="rounded-lg border border-slate-500/30 bg-slate-900/30 px-4 py-3 flex items-center gap-3">
         <span className="text-lg">📊</span>
         <div>
-          <p className="text-ink font-medium text-sm">株価との連動性は低い・MEXC独自の需給で動いている可能性</p>
+          <p className="text-ink font-medium text-sm">原資産との連動性は低い・MEXC独自の需給で動いている可能性</p>
           <p className="text-ink-faint text-xs mt-0.5">
-            強相関({'>'}=0.6): {summary.strongCorrelation}/{summary.correlationCount}件、平均相関係数 {fmt2(avgCorr)}
+            強相関(≥0.6): {summary.strongCorrelation}/{summary.correlationCount}件、平均相関係数 {fmt2(avgCorr)}
           </p>
         </div>
       </div>
@@ -87,7 +87,7 @@ function CorrelationInsight({ summary }: { summary: CategorySummary }) {
       <div>
         <p className="text-amber-400 font-medium text-sm">銘柄によって連動性が異なる・個別分析推奨</p>
         <p className="text-ink-faint text-xs mt-0.5">
-          強相関({'>'}=0.6): {summary.strongCorrelation}/{summary.correlationCount}件、平均相関係数 {fmt2(avgCorr)}
+          強相関(≥0.6): {summary.strongCorrelation}/{summary.correlationCount}件、平均相関係数 {fmt2(avgCorr)}
         </p>
       </div>
     </div>
@@ -95,7 +95,7 @@ function CorrelationInsight({ summary }: { summary: CategorySummary }) {
 }
 
 // ---- Summary Card ----
-function SummaryCard({ label, summary, isStock }: { label: string; summary: CategorySummary; isStock?: boolean }) {
+function SummaryCard({ label, summary }: { label: string; summary: CategorySummary }) {
   const total = summary.count || 1
   return (
     <div className="bg-panel-raised border border-rim rounded-xl p-4 flex flex-col gap-3">
@@ -113,7 +113,7 @@ function SummaryCard({ label, summary, isStock }: { label: string; summary: Cate
           <span className="text-ink-faint text-[10px]">平均24h最大上昇</span>
         </div>
       </div>
-      {isStock && summary.correlationCount > 0 && (
+      {summary.correlationCount > 0 && (
         <div className="flex flex-col">
           <span className="text-blue-400 font-mono font-semibold text-sm">
             {summary.strongCorrelation}/{summary.correlationCount} 件
@@ -124,7 +124,7 @@ function SummaryCard({ label, summary, isStock }: { label: string; summary: Cate
           )}
         </div>
       )}
-      {isStock && summary.avgListingPremium !== null && (
+      {summary.avgListingPremium !== null && (
         <div className="flex flex-col gap-0.5">
           <div className="flex items-baseline gap-1">
             <span className={`font-mono font-semibold text-sm ${summary.avgListingPremium >= 5 ? 'text-red-400' : summary.avgListingPremium <= -5 ? 'text-green-400' : 'text-ink-dim'}`}>
@@ -139,7 +139,7 @@ function SummaryCard({ label, summary, isStock }: { label: string; summary: Cate
           </span>
         </div>
       )}
-      {isStock && (summary.longEdgeCount > 0 || summary.shortEdgeCount > 0) && (
+      {(summary.longEdgeCount > 0 || summary.shortEdgeCount > 0) && (
         <div className="flex flex-col gap-0.5 border-t border-rim pt-2">
           <span className="text-ink-faint text-[10px] mb-0.5">エッジ候補</span>
           <span className="text-[10px]">
@@ -188,15 +188,14 @@ function CorrBadge({ corr }: { corr: number | null }) {
   return <span className={`font-mono font-medium ${cls}`}>{corr >= 0 ? '+' : ''}{fmt2(corr)}</span>
 }
 
-// ---- Tables ----
-type StockSortKey = 'range24h' | 'range48h' | 'pump24h' | 'dump24h' | 'range72h' | 'klineCount' | 'correlation' | 'stockChange' | 'listingPremium'
-type CommSortKey  = 'range24h' | 'range48h' | 'pump24h' | 'dump24h' | 'range72h' | 'klineCount'
+// ---- Unified Table (STOCK・コモディティ共通) ----
+type SortKey = 'range24h' | 'range48h' | 'pump24h' | 'dump24h' | 'range72h' | 'klineCount' | 'correlation' | 'stockChange' | 'listingPremium'
 
-function StockTable({ coins }: { coins: CoinAnalysis[] }) {
-  const [sortKey, setSortKey] = useState<StockSortKey>('range24h')
+function CoinTable({ coins }: { coins: CoinAnalysis[] }) {
+  const [sortKey, setSortKey] = useState<SortKey>('range24h')
   const [asc, setAsc] = useState(false)
 
-  function handleSort(key: StockSortKey) {
+  function handleSort(key: SortKey) {
     if (key === sortKey) setAsc((v) => !v)
     else { setSortKey(key); setAsc(false) }
   }
@@ -208,7 +207,7 @@ function StockTable({ coins }: { coins: CoinAnalysis[] }) {
     return asc ? diff : -diff
   })
 
-  function Th({ k, label }: { k: StockSortKey; label: string }) {
+  function Th({ k, label }: { k: SortKey; label: string }) {
     const active = sortKey === k
     return (
       <th
@@ -230,15 +229,15 @@ function StockTable({ coins }: { coins: CoinAnalysis[] }) {
             <th className="pb-2 pr-3 text-left font-normal text-ink-faint">銘柄</th>
             <th className="pb-2 pr-3 text-left font-normal text-ink-faint">ティッカー</th>
             <th className="pb-2 pr-3 text-left font-normal text-ink-faint whitespace-nowrap">上場日時</th>
-            <Th k="range24h"    label="24h値幅" />
-            <Th k="range48h"    label="48h値幅" />
-            <Th k="pump24h"     label="24h最大上昇" />
-            <Th k="dump24h"     label="24h最大下落" />
-            <Th k="range72h"    label="72h値幅" />
+            <Th k="range24h"       label="24h値幅" />
+            <Th k="range48h"       label="48h値幅" />
+            <Th k="pump24h"        label="24h最大上昇" />
+            <Th k="dump24h"        label="24h最大下落" />
+            <Th k="range72h"       label="72h値幅" />
             <th className="pb-2 pr-3 text-center font-normal text-ink-faint">トレンド</th>
             <Th k="listingPremium" label="上場乖離率" />
             <Th k="correlation"    label="相関係数" />
-            <Th k="stockChange"    label="株価変化" />
+            <Th k="stockChange"    label="原資産変化" />
             <th className="pb-2 pr-3 text-center font-normal text-ink-faint">エッジ</th>
             <Th k="klineCount"     label="kline本数" />
           </tr>
@@ -290,72 +289,6 @@ function StockTable({ coins }: { coins: CoinAnalysis[] }) {
   )
 }
 
-function CommodityTable({ coins }: { coins: CoinAnalysis[] }) {
-  const [sortKey, setSortKey] = useState<CommSortKey>('range24h')
-  const [asc, setAsc] = useState(false)
-
-  function handleSort(key: CommSortKey) {
-    if (key === sortKey) setAsc((v) => !v)
-    else { setSortKey(key); setAsc(false) }
-  }
-
-  const sorted = [...coins].sort((a, b) => {
-    const diff = a[sortKey] - b[sortKey]
-    return asc ? diff : -diff
-  })
-
-  function Th({ k, label }: { k: CommSortKey; label: string }) {
-    const active = sortKey === k
-    return (
-      <th
-        className={`pb-2 pr-3 text-right font-normal cursor-pointer select-none whitespace-nowrap hover:text-ink transition-colors ${active ? 'text-amber-400' : 'text-ink-faint'}`}
-        onClick={() => handleSort(k)}
-      >
-        {label}{active ? (asc ? ' ↑' : ' ↓') : ''}
-      </th>
-    )
-  }
-
-  if (coins.length === 0) return <p className="text-ink-faint text-sm py-8 text-center">データなし</p>
-
-  return (
-    <div className="overflow-x-auto">
-      <table className="w-full text-xs">
-        <thead className="sticky top-0 bg-panel-raised">
-          <tr className="border-b border-rim">
-            <th className="pb-2 pr-3 text-left font-normal text-ink-faint">銘柄</th>
-            <th className="pb-2 pr-3 text-left font-normal text-ink-faint whitespace-nowrap">上場日時</th>
-            <Th k="range24h"   label="24h値幅" />
-            <Th k="range48h"   label="48h値幅" />
-            <Th k="pump24h"    label="24h最大上昇" />
-            <Th k="dump24h"    label="24h最大下落" />
-            <Th k="range72h"   label="72h値幅" />
-            <th className="pb-2 pr-3 text-center font-normal text-ink-faint">トレンド</th>
-            <Th k="klineCount" label="kline本数" />
-          </tr>
-        </thead>
-        <tbody>
-          {sorted.map((c) => (
-            <tr key={c.symbol} className="border-b border-rim hover:bg-panel-raised/50 transition-colors">
-              <td className="py-1.5 pr-3 font-mono text-ink font-medium">{c.symbol}</td>
-              <td className="py-1.5 pr-3 text-ink-faint whitespace-nowrap">
-                {new Date(c.listingTime).toLocaleDateString('ja-JP', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })}
-              </td>
-              <td className="py-1.5 pr-3 text-right font-mono text-amber-400">{fmt1(c.range24h)}%</td>
-              <td className="py-1.5 pr-3 text-right font-mono text-ink-dim">{fmt1(c.range48h)}%</td>
-              <td className="py-1.5 pr-3 text-right font-mono text-green-400">+{fmt1(c.pump24h)}%</td>
-              <td className="py-1.5 pr-3 text-right font-mono text-red-400">-{fmt1(c.dump24h)}%</td>
-              <td className="py-1.5 pr-3 text-right font-mono text-ink-dim">{fmt1(c.range72h)}%</td>
-              <td className="py-1.5 pr-3 text-center"><TrendBadge trend={c.trend} /></td>
-              <td className="py-1.5 text-right font-mono text-ink-faint">{c.klineCount}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
-  )
-}
-
 // ---- Page ----
 export default function LongResearchPage() {
   const [data, setData]       = useState<LongResearchData | null>(null)
@@ -377,7 +310,6 @@ export default function LongResearchPage() {
   const activeCoins   = data ? data[tab] : []
   const activeSummary = data?.summary[tab]
   const overallAvg24h = activeSummary?.avgRange24h ?? 0
-  const isStock       = tab === 'stock'
 
   return (
     <main className="max-w-6xl mx-auto px-6 py-8 flex flex-col gap-6">
@@ -405,7 +337,7 @@ export default function LongResearchPage() {
         <>
           {/* Summary Cards */}
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-            <SummaryCard label="STOCK"            summary={data.summary.stock}            isStock />
+            <SummaryCard label="STOCK"            summary={data.summary.stock} />
             <SummaryCard label="貴金属コモディティ" summary={data.summary.commodity_metal} />
             <SummaryCard label="エネルギー・その他" summary={data.summary.commodity_energy} />
           </div>
@@ -415,8 +347,8 @@ export default function LongResearchPage() {
             <Verdict avg24h={overallAvg24h} />
           )}
 
-          {/* Correlation Insight（STOCKタブのみ） */}
-          {isStock && activeSummary && activeSummary.correlationCount > 0 && (
+          {/* Correlation Insight */}
+          {activeSummary && activeSummary.correlationCount > 0 && (
             <CorrelationInsight summary={activeSummary} />
           )}
 
@@ -439,10 +371,7 @@ export default function LongResearchPage() {
               ))}
             </div>
             <div className="p-4">
-              {isStock
-                ? <StockTable    coins={activeCoins} />
-                : <CommodityTable coins={activeCoins} />
-              }
+              <CoinTable coins={activeCoins} />
             </div>
           </div>
         </>
