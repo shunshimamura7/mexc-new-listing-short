@@ -21,6 +21,9 @@ export interface CoinAnalysis {
   correlation: number | null
   stockTrend: 'up' | 'down' | 'flat' | null
   stockChange: number | null
+  listingPriceMexc: number | null
+  listingPriceStock: number | null
+  listingPremium: number | null
 }
 
 export interface CategorySummary {
@@ -35,6 +38,9 @@ export interface CategorySummary {
   correlationCount: number
   strongCorrelation: number
   avgCorrelation: number | null
+  avgListingPremium: number | null
+  undervalued: number
+  overvalued: number
 }
 
 export interface LongResearchData {
@@ -81,11 +87,14 @@ function summarize(coins: CoinAnalysis[]): CategorySummary {
       count: 0, avgRange24h: 0, avgRange48h: 0, avgPump24h: 0, avgDump24h: 0,
       trendUp: 0, trendDown: 0, trendFlat: 0,
       correlationCount: 0, strongCorrelation: 0, avgCorrelation: null,
+      avgListingPremium: null, undervalued: 0, overvalued: 0,
     }
   }
   const avg = (arr: number[]) => arr.reduce((s, v) => s + v, 0) / arr.length
-  const withCorr = coins.filter((c) => c.correlation !== null)
-  const corrValues = withCorr.map((c) => c.correlation as number)
+  const withCorr    = coins.filter((c) => c.correlation !== null)
+  const corrValues  = withCorr.map((c) => c.correlation as number)
+  const withPremium = coins.filter((c) => c.listingPremium !== null)
+  const premValues  = withPremium.map((c) => c.listingPremium as number)
   return {
     count:            n,
     avgRange24h:      avg(coins.map((c) => c.range24h)),
@@ -98,6 +107,9 @@ function summarize(coins: CoinAnalysis[]): CategorySummary {
     correlationCount: withCorr.length,
     strongCorrelation: withCorr.filter((c) => Math.abs(c.correlation as number) >= 0.6).length,
     avgCorrelation:   corrValues.length > 0 ? avg(corrValues) : null,
+    avgListingPremium: premValues.length > 0 ? avg(premValues) : null,
+    undervalued:      withPremium.filter((c) => (c.listingPremium as number) <= -5).length,
+    overvalued:       withPremium.filter((c) => (c.listingPremium as number) >= 5).length,
   }
 }
 
@@ -105,7 +117,7 @@ export async function GET() {
   try {
     const all = await loadAllListings()
 
-    const stockRaw: { listing: typeof all[0]; base: Omit<CoinAnalysis, 'ticker' | 'correlation' | 'stockTrend' | 'stockChange'> }[] = []
+    const stockRaw: { listing: typeof all[0]; base: Omit<CoinAnalysis, 'ticker' | 'correlation' | 'stockTrend' | 'stockChange' | 'listingPriceMexc' | 'listingPriceStock' | 'listingPremium'> }[] = []
     const commodity_metal: CoinAnalysis[]  = []
     const commodity_energy: CoinAnalysis[] = []
 
@@ -138,7 +150,7 @@ export async function GET() {
       if (category === 'stock') {
         stockRaw.push({ listing, base })
       } else {
-        const coin: CoinAnalysis = { ...base, ticker: null, correlation: null, stockTrend: null, stockChange: null }
+        const coin: CoinAnalysis = { ...base, ticker: null, correlation: null, stockTrend: null, stockChange: null, listingPriceMexc: null, listingPriceStock: null, listingPremium: null }
         if (isMetal(listing.symbol)) commodity_metal.push(coin)
         else commodity_energy.push(coin)
       }
@@ -149,38 +161,52 @@ export async function GET() {
       stockRaw.map(async ({ listing, base }) => {
         const ticker = extractTicker(listing.symbol)
         if (!ticker) {
-          return { ...base, ticker: null, correlation: null, stockTrend: null, stockChange: null } as CoinAnalysis
+          return { ...base, ticker: null, correlation: null, stockTrend: null, stockChange: null, listingPriceMexc: null, listingPriceStock: null, listingPremium: null } as CoinAnalysis
         }
 
         const from = new Date(listing.listingTime)
         const to   = new Date(listing.listingTime + 72 * 60 * 60 * 1000)
         const history = await getStockHistory(ticker, from, to)
 
-        let correlation: number | null = null
+        let correlation: number | null       = null
         let stockTrend: CoinAnalysis['stockTrend'] = null
-        let stockChange: number | null = null
+        let stockChange: number | null       = null
+        let listingPriceMexc: number | null  = null
+        let listingPriceStock: number | null = null
+        let listingPremium: number | null    = null
 
-        if (history && history.length >= 2) {
-          correlation = calcCorrelation(
-            listing.klines.map((k) => ({ time: k.time, close: k.close })),
-            history
-          )
+        if (history && history.length >= 1) {
           const firstClose = history[0].close
           const lastClose  = history[history.length - 1].close
-          if (firstClose > 0) {
-            stockChange = ((lastClose - firstClose) / firstClose) * 100
-            stockTrend  = stockChange >= 2 ? 'up' : stockChange <= -2 ? 'down' : 'flat'
+
+          if (history.length >= 2) {
+            correlation = calcCorrelation(
+              listing.klines.map((k) => ({ time: k.time, close: k.close })),
+              history
+            )
+            if (firstClose > 0) {
+              stockChange = ((lastClose - firstClose) / firstClose) * 100
+              stockTrend  = stockChange >= 2 ? 'up' : stockChange <= -2 ? 'down' : 'flat'
+            }
+          }
+
+          // 上場乖離率：MEXC上場価格 vs 上場日の株価
+          const mexcOpen = listing.klines[0]?.open || listing.klines[0]?.close || 0
+          if (mexcOpen > 0 && firstClose > 0) {
+            listingPriceMexc  = mexcOpen
+            listingPriceStock = firstClose
+            listingPremium    = ((mexcOpen - firstClose) / firstClose) * 100
           }
         }
 
-        return { ...base, ticker, correlation, stockTrend, stockChange } as CoinAnalysis
+        return { ...base, ticker, correlation, stockTrend, stockChange, listingPriceMexc, listingPriceStock, listingPremium } as CoinAnalysis
       })
     )
 
     const stock: CoinAnalysis[] = stockResults.map((r, i) =>
       r.status === 'fulfilled'
         ? r.value
-        : { ...stockRaw[i].base, ticker: null, correlation: null, stockTrend: null, stockChange: null }
+        : { ...stockRaw[i].base, ticker: null, correlation: null, stockTrend: null, stockChange: null, listingPriceMexc: null, listingPriceStock: null, listingPremium: null }
     )
 
     const data: LongResearchData = {

@@ -124,6 +124,21 @@ function SummaryCard({ label, summary, isStock }: { label: string; summary: Cate
           )}
         </div>
       )}
+      {isStock && summary.avgListingPremium !== null && (
+        <div className="flex flex-col gap-0.5">
+          <div className="flex items-baseline gap-1">
+            <span className={`font-mono font-semibold text-sm ${summary.avgListingPremium >= 5 ? 'text-red-400' : summary.avgListingPremium <= -5 ? 'text-green-400' : 'text-ink-dim'}`}>
+              {summary.avgListingPremium >= 0 ? '+' : ''}{fmt1(summary.avgListingPremium)}%
+            </span>
+            <span className="text-ink-faint text-[10px]">平均上場乖離率</span>
+          </div>
+          <span className="text-[10px]">
+            <span className="text-green-400">割安 {summary.undervalued}件</span>
+            <span className="text-ink-faint"> / </span>
+            <span className="text-red-400">割高 {summary.overvalued}件</span>
+          </span>
+        </div>
+      )}
       {summary.count > 0 && (
         <div>
           <p className="text-ink-faint text-[10px] mb-1">トレンド方向</p>
@@ -164,7 +179,7 @@ function CorrBadge({ corr }: { corr: number | null }) {
 }
 
 // ---- Tables ----
-type StockSortKey = 'range24h' | 'range48h' | 'pump24h' | 'dump24h' | 'range72h' | 'klineCount' | 'correlation' | 'stockChange'
+type StockSortKey = 'range24h' | 'range48h' | 'pump24h' | 'dump24h' | 'range72h' | 'klineCount' | 'correlation' | 'stockChange' | 'listingPremium'
 type CommSortKey  = 'range24h' | 'range48h' | 'pump24h' | 'dump24h' | 'range72h' | 'klineCount'
 
 function StockTable({ coins }: { coins: CoinAnalysis[] }) {
@@ -211,9 +226,10 @@ function StockTable({ coins }: { coins: CoinAnalysis[] }) {
             <Th k="dump24h"     label="24h最大下落" />
             <Th k="range72h"    label="72h値幅" />
             <th className="pb-2 pr-3 text-center font-normal text-ink-faint">トレンド</th>
-            <Th k="correlation" label="相関係数" />
-            <Th k="stockChange" label="株価変化" />
-            <Th k="klineCount"  label="kline本数" />
+            <Th k="listingPremium" label="上場乖離率" />
+            <Th k="correlation"    label="相関係数" />
+            <Th k="stockChange"    label="株価変化" />
+            <Th k="klineCount"     label="kline本数" />
           </tr>
         </thead>
         <tbody>
@@ -232,6 +248,14 @@ function StockTable({ coins }: { coins: CoinAnalysis[] }) {
               <td className="py-1.5 pr-3 text-right font-mono text-red-400">-{fmt1(c.dump24h)}%</td>
               <td className="py-1.5 pr-3 text-right font-mono text-ink-dim">{fmt1(c.range72h)}%</td>
               <td className="py-1.5 pr-3 text-center"><TrendBadge trend={c.trend} /></td>
+              <td className="py-1.5 pr-3 text-right font-mono">
+                {c.listingPremium !== null
+                  ? <span className={c.listingPremium >= 5 ? 'text-red-400' : c.listingPremium <= -5 ? 'text-green-400' : 'text-ink-dim'}>
+                      {c.listingPremium >= 0 ? '+' : ''}{fmt1(c.listingPremium)}%
+                    </span>
+                  : <span className="text-ink-faint">—</span>
+                }
+              </td>
               <td className="py-1.5 pr-3 text-right"><CorrBadge corr={c.correlation} /></td>
               <td className="py-1.5 pr-3 text-right font-mono">
                 {c.stockChange !== null
