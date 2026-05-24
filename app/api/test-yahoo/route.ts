@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
-import yahooFinance from 'yahoo-finance2'
+import YahooFinance from 'yahoo-finance2'
+const yahooFinance = new YahooFinance()
 
 export async function GET() {
   const from = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000)

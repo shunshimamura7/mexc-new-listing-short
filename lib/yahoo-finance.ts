@@ -1,4 +1,5 @@
-import yahooFinance from 'yahoo-finance2'
+import YahooFinance from 'yahoo-finance2'
+const yahooFinance = new YahooFinance()
 
 // IONQSTOCK_USDT → 'IONQ'
 export function extractTicker(mexcSymbol: string): string | null {
