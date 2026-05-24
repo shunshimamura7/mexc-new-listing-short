@@ -12,7 +12,7 @@ export async function GET() {
       period1: from,
       period2: to,
       interval: '1d',
-    })
+    }) as any[]
     console.log('[test-yahoo] success', result.length, 'rows')
     return NextResponse.json({ success: true, count: result.length, data: result })
   } catch (e) {
