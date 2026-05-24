@@ -2,6 +2,8 @@
 
 import { useState, useEffect } from 'react'
 import type { CoinAnalysis, CategorySummary, LongResearchData } from '@/app/api/long-research/route'
+import type { StockSignal } from '@/lib/stock-signal'
+import type { StockSignalData } from '@/app/api/stock-signal/route'
 
 type Tab = 'stock' | 'commodity_metal' | 'commodity_energy'
 
@@ -170,6 +172,183 @@ function SummaryCard({ label, summary }: { label: string; summary: CategorySumma
   )
 }
 
+// ---- Signal Cards ----
+function SignalCard({
+  signal,
+  onEntry,
+}: {
+  signal: StockSignal
+  onEntry: (symbol: string) => Promise<void>
+}) {
+  const [entering, setEntering] = useState(false)
+  const [done, setDone]         = useState<string | null>(null)
+
+  async function handleEntry() {
+    setEntering(true)
+    try {
+      await onEntry(signal.symbol)
+      setDone('エントリー済み')
+    } catch (e) {
+      setDone(String(e))
+    } finally {
+      setEntering(false)
+    }
+  }
+
+  const isLong    = signal.direction === 'long'
+  const isShort   = signal.direction === 'short'
+  const dirColor  = isLong ? 'text-green-400' : isShort ? 'text-red-400' : 'text-ink-dim'
+  const dirLabel  = isLong ? '📈 ロング' : isShort ? '📉 ショート' : '—'
+  const borderCls = isLong
+    ? 'border-green-500/30 bg-green-950/10'
+    : isShort
+      ? 'border-red-500/30 bg-red-950/10'
+      : 'border-rim bg-panel-raised'
+
+  return (
+    <div className={`rounded-xl border p-4 flex flex-col gap-2 ${borderCls}`}>
+      <div className="flex items-start justify-between gap-2">
+        <div>
+          <p className="font-mono font-semibold text-sm text-ink">{signal.symbol}</p>
+          <p className="text-blue-400 text-xs">${signal.ticker}</p>
+        </div>
+        <div className="text-right">
+          <p className={`font-bold text-sm ${dirColor}`}>{dirLabel}</p>
+          <p className="text-ink-faint text-[10px]">信頼度 {signal.confidence}</p>
+        </div>
+      </div>
+
+      {/* Price row */}
+      {signal.regularPrice !== null && (
+        <div className="flex gap-3 text-xs">
+          <span className="text-ink-faint">通常価格</span>
+          <span className="font-mono text-ink">${signal.regularPrice.toFixed(2)}</span>
+          {signal.extendedChange !== null && (
+            <span className={`font-mono font-medium ${signal.extendedChange >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+              {signal.extendedType === 'pre' ? '時間前' : '時間後'}{signal.extendedChange >= 0 ? '+' : ''}{fmt1(signal.extendedChange)}%
+            </span>
+          )}
+        </div>
+      )}
+
+      {/* EPS row */}
+      {signal.epsSurprise !== null && (
+        <div className="flex gap-3 text-xs">
+          <span className="text-ink-faint">EPSサプライズ</span>
+          <span className={`font-mono font-medium ${signal.epsSurprise >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+            {signal.epsSurprise >= 0 ? '+' : ''}{fmt1(signal.epsSurprise)}%
+          </span>
+          {signal.daysToEarnings !== null && (
+            <span className="text-amber-400">決算まで{signal.daysToEarnings}日</span>
+          )}
+        </div>
+      )}
+
+      {/* Analyst row */}
+      {signal.recommendation && (
+        <div className="flex gap-3 text-xs">
+          <span className="text-ink-faint">アナリスト</span>
+          <span className="text-ink-dim">{signal.recommendation}</span>
+          {signal.targetUpside !== null && (
+            <span className={`font-mono font-medium ${signal.targetUpside >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+              目標 {signal.targetUpside >= 0 ? '+' : ''}{fmt1(signal.targetUpside)}%
+            </span>
+          )}
+        </div>
+      )}
+
+      {/* Reasons */}
+      {signal.reasons.length > 0 && (
+        <ul className="text-[10px] text-ink-faint space-y-0.5">
+          {signal.reasons.map((r, i) => <li key={i}>• {r}</li>)}
+        </ul>
+      )}
+
+      {/* SL/TP + Entry button */}
+      {signal.direction && (
+        <div className="flex items-center justify-between mt-1 pt-2 border-t border-rim">
+          <span className="text-[10px] text-ink-faint">
+            SL {signal.slPct}% / TP {signal.tpPct}%
+          </span>
+          {done ? (
+            <span className="text-[10px] text-ink-dim">{done}</span>
+          ) : (
+            <button
+              onClick={handleEntry}
+              disabled={entering}
+              className="px-3 py-1 rounded-lg text-xs font-medium bg-amber-500/20 text-amber-400 hover:bg-amber-500/30 transition-colors disabled:opacity-50"
+            >
+              {entering ? '送信中…' : 'ペーパーエントリー'}
+            </button>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function SignalSection({
+  signals,
+  loading,
+}: {
+  signals: StockSignal[]
+  loading: boolean
+}) {
+  const [entryMsg, setEntryMsg] = useState<{ symbol: string; msg: string } | null>(null)
+
+  async function handleEntry(symbol: string) {
+    const res  = await fetch('/api/stock-signal/entry', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ symbol }),
+    })
+    const json = await res.json()
+    if (!json.success) {
+      setEntryMsg({ symbol, msg: json.error ?? 'エラー' })
+      throw new Error(json.error)
+    }
+    setEntryMsg({ symbol, msg: 'エントリー完了' })
+  }
+
+  const active = signals.filter((s) => s.direction !== null)
+  const passive = signals.filter((s) => s.direction === null)
+
+  return (
+    <div className="flex flex-col gap-3">
+      <div className="flex items-center justify-between">
+        <h2 className="text-sm font-semibold text-ink">リアルタイムシグナル</h2>
+        {loading && <span className="text-ink-faint text-xs">取得中...</span>}
+        {!loading && (
+          <span className="text-ink-faint text-xs">
+            シグナルあり {active.length}件 / 監視中 {signals.length}件
+          </span>
+        )}
+      </div>
+
+      {entryMsg && (
+        <div className="rounded-lg border border-amber-500/30 bg-amber-950/20 px-3 py-2 text-xs text-amber-400">
+          {entryMsg.symbol}: {entryMsg.msg}
+        </div>
+      )}
+
+      {active.length > 0 && (
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+          {active.map((s) => (
+            <SignalCard key={s.symbol} signal={s} onEntry={handleEntry} />
+          ))}
+        </div>
+      )}
+
+      {active.length === 0 && !loading && (
+        <div className="rounded-lg border border-rim bg-panel-raised px-4 py-3 text-center">
+          <p className="text-ink-faint text-sm">現在アクティブなシグナルはありません</p>
+          <p className="text-ink-faint text-xs mt-0.5">監視中: {passive.length}件</p>
+        </div>
+      )}
+    </div>
+  )
+}
+
 // ---- Helpers ----
 function TrendBadge({ trend }: { trend: CoinAnalysis['trend'] }) {
   const cls = trend === 'up' ? 'text-green-400' : trend === 'down' ? 'text-red-400' : 'text-ink-dim'
@@ -191,7 +370,15 @@ function CorrBadge({ corr }: { corr: number | null }) {
 // ---- Unified Table (STOCK・コモディティ共通) ----
 type SortKey = 'range24h' | 'range48h' | 'pump24h' | 'dump24h' | 'range72h' | 'klineCount' | 'correlation' | 'stockChange' | 'listingPremium'
 
-function CoinTable({ coins }: { coins: CoinAnalysis[] }) {
+function CoinTable({
+  coins,
+  isStock,
+  signalMap,
+}: {
+  coins: CoinAnalysis[]
+  isStock: boolean
+  signalMap: Map<string, StockSignal>
+}) {
   const [sortKey, setSortKey] = useState<SortKey>('range24h')
   const [asc, setAsc] = useState(false)
 
@@ -239,50 +426,85 @@ function CoinTable({ coins }: { coins: CoinAnalysis[] }) {
             <Th k="correlation"    label="相関係数" />
             <Th k="stockChange"    label="原資産変化" />
             <th className="pb-2 pr-3 text-center font-normal text-ink-faint">エッジ</th>
+            {isStock && (
+              <>
+                <th className="pb-2 pr-3 text-right font-normal text-ink-faint whitespace-nowrap">時間外%</th>
+                <th className="pb-2 pr-3 text-right font-normal text-ink-faint">EPS</th>
+                <th className="pb-2 pr-3 text-center font-normal text-ink-faint">シグナル</th>
+              </>
+            )}
             <Th k="klineCount"     label="kline本数" />
           </tr>
         </thead>
         <tbody>
-          {sorted.map((c) => (
-            <tr key={c.symbol} className="border-b border-rim hover:bg-panel-raised/50 transition-colors">
-              <td className="py-1.5 pr-3 font-mono text-ink font-medium">{c.symbol}</td>
-              <td className="py-1.5 pr-3 font-mono text-blue-400">
-                {c.ticker ? `$${c.ticker}` : '—'}
-              </td>
-              <td className="py-1.5 pr-3 text-ink-faint whitespace-nowrap">
-                {new Date(c.listingTime).toLocaleDateString('ja-JP', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })}
-              </td>
-              <td className="py-1.5 pr-3 text-right font-mono text-amber-400">{fmt1(c.range24h)}%</td>
-              <td className="py-1.5 pr-3 text-right font-mono text-ink-dim">{fmt1(c.range48h)}%</td>
-              <td className="py-1.5 pr-3 text-right font-mono text-green-400">+{fmt1(c.pump24h)}%</td>
-              <td className="py-1.5 pr-3 text-right font-mono text-red-400">-{fmt1(c.dump24h)}%</td>
-              <td className="py-1.5 pr-3 text-right font-mono text-ink-dim">{fmt1(c.range72h)}%</td>
-              <td className="py-1.5 pr-3 text-center"><TrendBadge trend={c.trend} /></td>
-              <td className="py-1.5 pr-3 text-right font-mono">
-                {c.listingPremium !== null
-                  ? <span className={c.listingPremium >= 5 ? 'text-red-400' : c.listingPremium <= -5 ? 'text-green-400' : 'text-ink-dim'}>
-                      {c.listingPremium >= 0 ? '+' : ''}{fmt1(c.listingPremium)}%
-                    </span>
-                  : <span className="text-ink-faint">—</span>
-                }
-              </td>
-              <td className="py-1.5 pr-3 text-right"><CorrBadge corr={c.correlation} /></td>
-              <td className="py-1.5 pr-3 text-right font-mono">
-                {c.stockChange !== null
-                  ? <span className={c.stockChange >= 0 ? 'text-green-400' : 'text-red-400'}>
-                      {c.stockChange >= 0 ? '+' : ''}{fmt1(c.stockChange)}%
-                    </span>
-                  : <span className="text-ink-faint">—</span>
-                }
-              </td>
-              <td className="py-1.5 pr-3 text-center text-xs">
-                {c.longEdge  ? <span className="text-green-400">📈 ロング</span>  :
-                 c.shortEdge ? <span className="text-red-400">📉 ショート</span> :
-                 <span className="text-ink-faint">—</span>}
-              </td>
-              <td className="py-1.5 text-right font-mono text-ink-faint">{c.klineCount}</td>
-            </tr>
-          ))}
+          {sorted.map((c) => {
+            const sig = isStock ? signalMap.get(c.symbol) : undefined
+            return (
+              <tr key={c.symbol} className="border-b border-rim hover:bg-panel-raised/50 transition-colors">
+                <td className="py-1.5 pr-3 font-mono text-ink font-medium">{c.symbol}</td>
+                <td className="py-1.5 pr-3 font-mono text-blue-400">
+                  {c.ticker ? `$${c.ticker}` : '—'}
+                </td>
+                <td className="py-1.5 pr-3 text-ink-faint whitespace-nowrap">
+                  {new Date(c.listingTime).toLocaleDateString('ja-JP', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })}
+                </td>
+                <td className="py-1.5 pr-3 text-right font-mono text-amber-400">{fmt1(c.range24h)}%</td>
+                <td className="py-1.5 pr-3 text-right font-mono text-ink-dim">{fmt1(c.range48h)}%</td>
+                <td className="py-1.5 pr-3 text-right font-mono text-green-400">+{fmt1(c.pump24h)}%</td>
+                <td className="py-1.5 pr-3 text-right font-mono text-red-400">-{fmt1(c.dump24h)}%</td>
+                <td className="py-1.5 pr-3 text-right font-mono text-ink-dim">{fmt1(c.range72h)}%</td>
+                <td className="py-1.5 pr-3 text-center"><TrendBadge trend={c.trend} /></td>
+                <td className="py-1.5 pr-3 text-right font-mono">
+                  {c.listingPremium !== null
+                    ? <span className={c.listingPremium >= 5 ? 'text-red-400' : c.listingPremium <= -5 ? 'text-green-400' : 'text-ink-dim'}>
+                        {c.listingPremium >= 0 ? '+' : ''}{fmt1(c.listingPremium)}%
+                      </span>
+                    : <span className="text-ink-faint">—</span>
+                  }
+                </td>
+                <td className="py-1.5 pr-3 text-right"><CorrBadge corr={c.correlation} /></td>
+                <td className="py-1.5 pr-3 text-right font-mono">
+                  {c.stockChange !== null
+                    ? <span className={c.stockChange >= 0 ? 'text-green-400' : 'text-red-400'}>
+                        {c.stockChange >= 0 ? '+' : ''}{fmt1(c.stockChange)}%
+                      </span>
+                    : <span className="text-ink-faint">—</span>
+                  }
+                </td>
+                <td className="py-1.5 pr-3 text-center text-xs">
+                  {c.longEdge  ? <span className="text-green-400">📈 ロング</span>  :
+                   c.shortEdge ? <span className="text-red-400">📉 ショート</span> :
+                   <span className="text-ink-faint">—</span>}
+                </td>
+                {isStock && (
+                  <>
+                    <td className="py-1.5 pr-3 text-right font-mono">
+                      {sig?.extendedChange != null
+                        ? <span className={sig.extendedChange >= 0 ? 'text-green-400' : 'text-red-400'}>
+                            {sig.extendedChange >= 0 ? '+' : ''}{fmt1(sig.extendedChange)}%
+                          </span>
+                        : <span className="text-ink-faint">—</span>
+                      }
+                    </td>
+                    <td className="py-1.5 pr-3 text-right font-mono">
+                      {sig?.epsSurprise != null
+                        ? <span className={sig.epsSurprise >= 0 ? 'text-green-400' : 'text-red-400'}>
+                            {sig.epsSurprise >= 0 ? '+' : ''}{fmt1(sig.epsSurprise)}%
+                          </span>
+                        : <span className="text-ink-faint">—</span>
+                      }
+                    </td>
+                    <td className="py-1.5 pr-3 text-center">
+                      {sig?.direction === 'long'  ? <span className="text-green-400">📈</span> :
+                       sig?.direction === 'short' ? <span className="text-red-400">📉</span>   :
+                       <span className="text-ink-faint">—</span>}
+                    </td>
+                  </>
+                )}
+                <td className="py-1.5 text-right font-mono text-ink-faint">{c.klineCount}</td>
+              </tr>
+            )
+          })}
         </tbody>
       </table>
     </div>
@@ -291,10 +513,12 @@ function CoinTable({ coins }: { coins: CoinAnalysis[] }) {
 
 // ---- Page ----
 export default function LongResearchPage() {
-  const [data, setData]       = useState<LongResearchData | null>(null)
-  const [loading, setLoading] = useState(true)
-  const [error, setError]     = useState<string | null>(null)
-  const [tab, setTab]         = useState<Tab>('stock')
+  const [data, setData]             = useState<LongResearchData | null>(null)
+  const [loading, setLoading]       = useState(true)
+  const [error, setError]           = useState<string | null>(null)
+  const [tab, setTab]               = useState<Tab>('stock')
+  const [signals, setSignals]       = useState<StockSignal[]>([])
+  const [signalLoading, setSignalLoading] = useState(false)
 
   useEffect(() => {
     fetch('/api/long-research')
@@ -307,9 +531,24 @@ export default function LongResearchPage() {
       .finally(() => setLoading(false))
   }, [])
 
+  // Fetch stock signals when STOCK tab is shown
+  useEffect(() => {
+    if (tab !== 'stock') return
+    setSignalLoading(true)
+    fetch('/api/stock-signal')
+      .then((r) => r.json())
+      .then((j) => {
+        if (j.success) setSignals((j.data as StockSignalData).signals)
+      })
+      .catch(() => {})
+      .finally(() => setSignalLoading(false))
+  }, [tab])
+
   const activeCoins   = data ? data[tab] : []
   const activeSummary = data?.summary[tab]
   const overallAvg24h = activeSummary?.avgRange24h ?? 0
+
+  const signalMap = new Map(signals.map((s) => [s.symbol, s]))
 
   return (
     <main className="max-w-6xl mx-auto px-6 py-8 flex flex-col gap-6">
@@ -352,6 +591,11 @@ export default function LongResearchPage() {
             <CorrelationInsight summary={activeSummary} />
           )}
 
+          {/* Signal Section (STOCK tab only) */}
+          {tab === 'stock' && (
+            <SignalSection signals={signals} loading={signalLoading} />
+          )}
+
           {/* Tabs + Table */}
           <div className="bg-panel border border-rim rounded-xl overflow-hidden">
             <div className="flex border-b border-rim">
@@ -371,7 +615,11 @@ export default function LongResearchPage() {
               ))}
             </div>
             <div className="p-4">
-              <CoinTable coins={activeCoins} />
+              <CoinTable
+                coins={activeCoins}
+                isStock={tab === 'stock'}
+                signalMap={signalMap}
+              />
             </div>
           </div>
         </>

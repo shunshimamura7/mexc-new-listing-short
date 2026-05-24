@@ -53,7 +53,112 @@ export async function getStockHistory(
   }
 }
 
-// ピアソン相関係数
+// ── Real-time data ─────────────────────────────────────────────────────────────
+
+export interface EarningsInfo {
+  nextEarningsDate: Date | null
+  lastEPS: number | null
+  estimatedEPS: number | null
+  epsSurprise: number | null   // % (positive = beat)
+  revenueActual: number | null
+  revenueEstimate: number | null
+}
+
+export async function getEarningsInfo(ticker: string): Promise<EarningsInfo | null> {
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const result = await (yahooFinance.quoteSummary as any)(ticker, {
+      modules: ['calendarEvents', 'earningsHistory'],
+    }) as any
+    if (!result) return null
+
+    const cal = result.calendarEvents
+    let nextEarningsDate: Date | null = null
+    const rawDate = cal?.earnings?.earningsDate?.[0]
+    if (rawDate instanceof Date) nextEarningsDate = rawDate
+    else if (rawDate) nextEarningsDate = new Date(rawDate)
+
+    const hist   = result.earningsHistory?.history
+    const latest = Array.isArray(hist) && hist.length > 0 ? hist[0] : null
+    // surprisePercent is stored as decimal in yahoo-finance2 (0.042 = 4.2%)
+    const surprise = latest?.surprisePercent != null ? latest.surprisePercent * 100 : null
+
+    return {
+      nextEarningsDate,
+      lastEPS:         latest?.epsActual   ?? null,
+      estimatedEPS:    latest?.epsEstimate ?? null,
+      epsSurprise:     surprise,
+      revenueActual:   null,
+      revenueEstimate: null,
+    }
+  } catch {
+    return null
+  }
+}
+
+export interface ExtendedHoursPrice {
+  regularPrice: number | null
+  preMarketPrice: number | null
+  postMarketPrice: number | null
+  preMarketChange: number | null    // % (positive = up)
+  postMarketChange: number | null   // %
+}
+
+export async function getExtendedHoursPrice(ticker: string): Promise<ExtendedHoursPrice | null> {
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const result = await (yahooFinance.quoteSummary as any)(ticker, {
+      modules: ['price'],
+    }) as any
+    if (!result?.price) return null
+
+    const p = result.price
+    // changePercent fields are decimals (0.03 = 3%)
+    return {
+      regularPrice:    p.regularMarketPrice  ?? null,
+      preMarketPrice:  p.preMarketPrice       ?? null,
+      postMarketPrice: p.postMarketPrice      ?? null,
+      preMarketChange:  p.preMarketChangePercent  != null ? p.preMarketChangePercent  * 100 : null,
+      postMarketChange: p.postMarketChangePercent != null ? p.postMarketChangePercent * 100 : null,
+    }
+  } catch {
+    return null
+  }
+}
+
+export interface AnalystRating {
+  recommendation: string | null   // 'buy' | 'strongBuy' | 'hold' | 'sell' | 'strongSell'
+  targetPrice: number | null
+  targetUpside: number | null     // % vs current price
+}
+
+export async function getAnalystRating(ticker: string): Promise<AnalystRating | null> {
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const result = await (yahooFinance.quoteSummary as any)(ticker, {
+      modules: ['financialData'],
+    }) as any
+    if (!result?.financialData) return null
+
+    const fd           = result.financialData
+    const currentPrice = fd.currentPrice as number | null
+    const targetPrice  = fd.targetMeanPrice as number | null
+    const targetUpside =
+      currentPrice && currentPrice > 0 && targetPrice
+        ? ((targetPrice - currentPrice) / currentPrice) * 100
+        : null
+
+    return {
+      recommendation: fd.recommendationKey ?? null,
+      targetPrice:    targetPrice,
+      targetUpside,
+    }
+  } catch {
+    return null
+  }
+}
+
+// ── ピアソン相関係数 ────────────────────────────────────────────────────────────
 export function calcCorrelation(
   klines: { time: number; close: number }[],
   stockHistory: { date: Date; close: number }[]
