@@ -23,7 +23,7 @@ export interface StockPaperTrade {
 }
 
 const IS_KV = !!process.env.KV_REST_API_URL
-const DAILY_CAP_STOCK = 3
+export const DAILY_CAP_STOCK = 3
 
 async function db() {
   const { kv } = await import('@vercel/kv')

@@ -9,6 +9,8 @@ import {
   type AnalystRating,
 } from './yahoo-finance'
 
+export const SIGNAL_THRESHOLD = 40   // minimum confidence to produce a direction signal
+
 export interface StockSignal {
   symbol: string
   ticker: string
@@ -136,7 +138,7 @@ export async function calcStockSignal(coin: CoinAnalysis): Promise<StockSignal |
 
   const { longScore, shortScore, reasons } = scoreSignal(coin, ext, analyst, earnings, now)
 
-  const THRESHOLD = 40
+  const THRESHOLD = SIGNAL_THRESHOLD
   let direction: 'long' | 'short' | null = null
   let confidence = 0
 

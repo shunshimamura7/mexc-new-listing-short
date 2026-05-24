@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import type { Trade, TradeStatus, PaperTrade, PatternName } from '@/types'
 import { ALL_PATTERNS, PATTERN_SPECS, grossPnlPct, roundTripCostPct, formatPrice as fmtPrice } from '@/lib/trading-engine'
+import type { UnifiedTrade, UnifiedSummary } from '@/app/api/paper-trades/unified/route'
 
 const PRICE_POLL_MS = 10_000
 
@@ -272,9 +273,9 @@ function TradeRow({
 // ── Paper Trades View ─────────────────────────────────────────────────────────
 type PatternStat = { total: number; wins: number; totalPnl: number; liquidations: number }
 
-function computePatternStats(closed: PaperTrade[]): Partial<Record<PatternName, PatternStat>> {
+function computePatternStats(trades: PaperTrade[]): Partial<Record<PatternName, PatternStat>> {
   const stats: Partial<Record<PatternName, PatternStat>> = {}
-  for (const t of closed) {
+  for (const t of trades.filter((x) => x.status === 'closed')) {
     if (!stats[t.pattern]) stats[t.pattern] = { total: 0, wins: 0, totalPnl: 0, liquidations: 0 }
     const s = stats[t.pattern]!
     s.total++
@@ -285,17 +286,93 @@ function computePatternStats(closed: PaperTrade[]): Partial<Record<PatternName, 
   return stats
 }
 
+function SummaryBar({ label, s, color }: { label: string; s: UnifiedSummary; color: string }) {
+  return (
+    <div className="bg-panel border border-rim rounded-xl p-4 flex flex-col gap-1">
+      <div className="flex items-center justify-between">
+        <span className={`text-xs font-semibold ${color}`}>{label}</span>
+        <span className="text-ink-faint text-xs">{s.total}件</span>
+      </div>
+      <div className="flex gap-3 text-xs mt-1">
+        <span className="text-amber-400 font-mono font-bold text-base">{s.open}</span>
+        <span className="text-ink-faint self-end text-[10px]">未決済</span>
+        <span className="text-ink font-mono font-bold text-base ml-2">{s.closed}</span>
+        <span className="text-ink-faint self-end text-[10px]">決済済み</span>
+      </div>
+      <div className="flex gap-3 text-xs">
+        <span className={s.winRate !== null ? (s.winRate >= 50 ? 'text-green-400' : 'text-red-400') : 'text-ink-faint'}>
+          勝率 {s.winRate !== null ? `${s.winRate.toFixed(0)}%` : '—'}
+        </span>
+        <span className={s.avgPnlPct !== null ? (s.avgPnlPct >= 0 ? 'text-green-400' : 'text-red-400') : 'text-ink-faint'}>
+          平均 {s.avgPnlPct !== null ? `${s.avgPnlPct >= 0 ? '+' : ''}${s.avgPnlPct.toFixed(1)}%` : '—'}
+        </span>
+      </div>
+    </div>
+  )
+}
+
+function UnifiedTradeRow({ t }: { t: UnifiedTrade }) {
+  const isClosed = t.status === 'closed'
+  const dirIcon  = t.side === 'long' ? '📈' : '📉'
+  const exitIcon = t.exitReason === 'tp' ? '✅' : t.exitReason === 'sl' ? '🛑' : t.exitReason === 'liquidation' ? '💥' : null
+  const pnl      = t.pnlPct ?? null
+  return (
+    <tr className={`border-b border-rim transition-colors ${isClosed ? (pnl !== null && pnl >= 0 ? 'bg-green-950/10 hover:bg-green-950/20' : 'bg-red-950/10 hover:bg-red-950/20') : 'hover:bg-panel-raised/50'}`}>
+      <td className="px-4 py-2">
+        <div className="flex items-center gap-1.5">
+          <span className="text-xs">{dirIcon}</span>
+          <span className="font-mono text-sm text-ink font-medium">{t.symbol}</span>
+          {t.ticker && <span className="text-blue-400 text-xs">${t.ticker}</span>}
+        </div>
+        <div className="text-[10px] text-ink-faint mt-0.5">
+          {new Date(t.entryTime).toLocaleString('ja-JP', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })}
+          {t.pattern && <span className="ml-1.5 font-mono text-amber-400">[{t.pattern}]</span>}
+          {t.confidence != null && <span className="ml-1.5 text-blue-400">信頼度{t.confidence}</span>}
+        </div>
+      </td>
+      <td className="px-3 py-2">
+        <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${t.category === 'stock' ? 'bg-blue-500/15 text-blue-400' : 'bg-amber-500/15 text-amber-400'}`}>
+          {t.category === 'stock' ? 'STOCK' : '暗号ミーム'}
+        </span>
+      </td>
+      <td className="px-3 py-2 text-right font-mono text-ink-dim text-xs">${t.entryPrice.toFixed(4)}</td>
+      <td className="px-3 py-2 text-right font-mono text-ink-dim text-xs">
+        {t.exitPrice != null ? `$${t.exitPrice.toFixed(4)}` : '—'}
+      </td>
+      <td className="px-3 py-2 text-center">{exitIcon ?? (isClosed ? '—' : <span className="text-[10px] text-amber-400">保有中</span>)}</td>
+      <td className={`px-4 py-2 text-right font-mono font-medium text-sm ${pnl !== null ? (pnl >= 0 ? 'text-green-400' : 'text-red-400') : 'text-ink-faint'}`}>
+        {pnl !== null ? `${pnl >= 0 ? '+' : ''}${pnl.toFixed(1)}%` : '—'}
+      </td>
+    </tr>
+  )
+}
+
+type PaperCategory = 'all' | 'crypto_meme' | 'stock'
+
 function PaperTradesView() {
-  const [trades, setTrades]   = useState<PaperTrade[]>([])
-  const [loading, setLoading] = useState(true)
-  const [prices, setPrices]   = useState<Record<string, number>>({})
-  const [subTab, setSubTab]   = useState<'open' | 'closed' | 'stats'>('stats')
+  type UnifiedResponse = {
+    trades: UnifiedTrade[]
+    summary: { all: UnifiedSummary; crypto_meme: UnifiedSummary; stock: UnifiedSummary }
+  }
+
+  const [data, setData]         = useState<UnifiedResponse | null>(null)
+  const [loading, setLoading]   = useState(true)
+  const [category, setCategory] = useState<PaperCategory>('all')
+  const [subTab, setSubTab]     = useState<'list' | 'stats'>('list')
+  const [lastRun, setLastRun]   = useState<string | null>(null)
+
+  // Keep raw PaperTrades for pattern stats (crypto only)
+  const [rawCrypto, setRawCrypto] = useState<PaperTrade[]>([])
 
   const load = useCallback(async () => {
     try {
-      const res  = await fetch('/api/paper-trades')
-      const json = await res.json()
-      if (json.success) setTrades(json.trades as PaperTrade[])
+      const [uRes, cRes] = await Promise.all([
+        fetch('/api/paper-trades/unified'),
+        fetch('/api/paper-trades'),
+      ])
+      const [uJson, cJson] = await Promise.all([uRes.json(), cRes.json()])
+      if (uJson.success) setData(uJson)
+      if (cJson.success) setRawCrypto(cJson.trades as PaperTrade[])
     } finally {
       setLoading(false)
     }
@@ -303,95 +380,118 @@ function PaperTradesView() {
 
   useEffect(() => { load() }, [load])
 
-  // Poll prices for open/pending trades
+  // Fetch last cron run timestamp
   useEffect(() => {
-    const open = trades.filter((t) => t.status !== 'closed')
-    const syms = [...new Set(open.map((t) => t.symbol))]
-    if (!syms.length) return
-
-    async function poll() {
-      const entries = await Promise.all(
-        syms.map(async (s) => {
-          try {
-            const r = await fetch(`/api/mexc/ticker/${s}`)
-            const j = await r.json()
-            return j.success ? [s, j.price as number] as const : null
-          } catch { return null }
-        })
-      )
-      const map: Record<string, number> = {}
-      for (const e of entries) if (e) map[e[0]] = e[1]
-      setPrices(map)
-    }
-    poll()
-    const id = setInterval(poll, 10_000)
-    return () => clearInterval(id)
-  }, [trades])
-
-  const open   = trades.filter((t) => t.status !== 'closed')
-  const closed = trades.filter((t) => t.status === 'closed')
-  const stats  = computePatternStats(closed)
-
-  const totalClosedWins = closed.filter((t) => t.exitReason === 'tp').length
-  const totalWinRate    = closed.length > 0 ? totalClosedWins / closed.length * 100 : null
-  const avgNetPnl       = closed.length > 0
-    ? closed.reduce((s, t) => s + (t.netPnlPct ?? 0), 0) / closed.length
-    : null
+    fetch('/api/stock-signal/last-run')
+      .then((r) => r.json())
+      .then((j) => { if (j.lastRun) setLastRun(j.lastRun as string) })
+      .catch(() => {})
+  }, [])
 
   if (loading) return <div className="text-center py-16 text-ink-faint text-sm">読み込み中...</div>
 
-  if (!trades.length) {
+  const trades   = data?.trades ?? []
+  const summary  = data?.summary
+  const filtered =
+    category === 'all'        ? trades :
+    category === 'crypto_meme' ? trades.filter((t) => t.category === 'crypto_meme') :
+    trades.filter((t) => t.category === 'stock')
+
+  const cryptoStats = computePatternStats(rawCrypto)
+
+  // Empty state with diagnostic context
+  if (trades.length === 0) {
     return (
-      <div className="text-center py-16 text-ink-faint text-sm">
-        <p>ペーパートレードがまだありません</p>
-        <p className="mt-1 text-xs">スコアリングAPIが推奨対象を検出すると自動エントリーされます</p>
+      <div className="space-y-4">
+        <div className="rounded-xl border border-rim bg-panel-raised px-6 py-8 text-center space-y-2">
+          <p className="text-ink font-medium">ペーパートレードはまだありません</p>
+          <p className="text-ink-faint text-xs">暗号ミーム: スコアリングAPIが推奨対象（スコア≥3）を検出すると自動エントリーされます</p>
+          <p className="text-ink-faint text-xs">STOCK: シグナル信頼度≥40 かつ日次3件以内で自動エントリーされます</p>
+          {lastRun && (
+            <p className="text-ink-faint text-[10px] mt-2">
+              最終STOCKチェック: {new Date(lastRun).toLocaleString('ja-JP')}
+            </p>
+          )}
+        </div>
       </div>
     )
   }
 
   return (
     <div className="space-y-5">
-      {/* Summary cards */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-        <div className="bg-panel border border-rim rounded-xl p-4">
-          <div className="text-2xl font-bold font-mono text-amber-400">{open.length}</div>
-          <div className="text-xs text-ink-faint mt-1">未決済</div>
+
+      {/* Summary bars */}
+      {summary && (
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          <SummaryBar label="全体"      s={summary.all}        color="text-ink" />
+          <SummaryBar label="暗号ミーム" s={summary.crypto_meme} color="text-amber-400" />
+          <SummaryBar label="STOCK"    s={summary.stock}      color="text-blue-400" />
         </div>
-        <div className="bg-panel border border-rim rounded-xl p-4">
-          <div className="text-2xl font-bold font-mono text-ink">{closed.length}</div>
-          <div className="text-xs text-ink-faint mt-1">決済済み</div>
+      )}
+
+      {/* Last run */}
+      {lastRun && (
+        <p className="text-ink-faint text-[10px] text-right">
+          最終STOCKチェック: {new Date(lastRun).toLocaleString('ja-JP')}
+        </p>
+      )}
+
+      {/* Category + sub-tab selectors */}
+      <div className="flex flex-wrap items-center gap-2">
+        <div className="flex gap-1 bg-panel border border-rim rounded-xl p-1">
+          {(['all', 'crypto_meme', 'stock'] as PaperCategory[]).map((c) => (
+            <button key={c} onClick={() => setCategory(c)}
+              className={`px-3 py-1 rounded-lg text-xs font-medium transition-colors ${category === c ? 'bg-amber-500 text-white' : 'text-ink-dim hover:text-ink'}`}>
+              {c === 'all' ? `全体 (${trades.length})` : c === 'crypto_meme' ? `暗号ミーム (${summary?.crypto_meme.total ?? 0})` : `STOCK (${summary?.stock.total ?? 0})`}
+            </button>
+          ))}
         </div>
-        <div className="bg-panel border border-rim rounded-xl p-4">
-          <div className={`text-2xl font-bold font-mono ${totalWinRate !== null ? (totalWinRate >= 50 ? 'text-green-400' : 'text-red-400') : 'text-ink-dim'}`}>
-            {totalWinRate !== null ? `${totalWinRate.toFixed(0)}%` : '—'}
-          </div>
-          <div className="text-xs text-ink-faint mt-1">勝率</div>
-        </div>
-        <div className="bg-panel border border-rim rounded-xl p-4">
-          <div className={`text-2xl font-bold font-mono ${avgNetPnl !== null ? (avgNetPnl >= 0 ? 'text-green-400' : 'text-red-400') : 'text-ink-dim'}`}>
-            {avgNetPnl !== null ? `${avgNetPnl >= 0 ? '+' : ''}${avgNetPnl.toFixed(1)}%` : '—'}
-          </div>
-          <div className="text-xs text-ink-faint mt-1">平均純PnL</div>
+        <div className="flex gap-1 bg-panel border border-rim rounded-xl p-1">
+          {(['list', 'stats'] as const).map((k) => (
+            <button key={k} onClick={() => setSubTab(k)}
+              className={`px-3 py-1 rounded-lg text-xs font-medium transition-colors ${subTab === k ? 'bg-panel-raised text-amber-400' : 'text-ink-dim hover:text-ink'}`}>
+              {k === 'list' ? '一覧' : 'パターン比較'}
+            </button>
+          ))}
         </div>
       </div>
 
-      {/* Sub-tabs */}
-      <div className="flex gap-2">
-        {(['stats', 'open', 'closed'] as const).map((k) => (
-          <button key={k} onClick={() => setSubTab(k)}
-            className={`px-4 py-2 rounded-xl text-sm font-medium border transition-colors ${
-              subTab === k ? 'bg-amber-500 border-amber-400 text-white' : 'bg-panel border-rim text-ink-dim hover:text-ink hover:bg-panel-raised'
-            }`}>
-            {k === 'stats' ? 'パターン比較' : k === 'open' ? `未決済 (${open.length})` : `決済済み (${closed.length})`}
-          </button>
-        ))}
-      </div>
+      {/* Trade list */}
+      {subTab === 'list' && (
+        <div className="bg-panel rounded-xl border border-rim overflow-hidden">
+          {filtered.length === 0 ? (
+            <div className="px-6 py-10 text-center text-ink-faint text-sm">
+              {category === 'stock'
+                ? 'STOCKペーパートレードはまだありません。信頼度≥40のシグナルが出ると自動エントリーされます。'
+                : '暗号ミームペーパートレードはまだありません。'}
+            </div>
+          ) : (
+            <div className="overflow-x-auto max-h-[600px] overflow-y-auto">
+              <table className="w-full text-sm">
+                <thead className="sticky top-0 bg-panel-raised z-10">
+                  <tr className="text-ink-faint text-left border-b border-rim">
+                    <th className="px-4 py-2.5 font-medium">銘柄 / 日時</th>
+                    <th className="px-3 py-2.5 font-medium">種別</th>
+                    <th className="px-3 py-2.5 text-right font-medium">エントリー</th>
+                    <th className="px-3 py-2.5 text-right font-medium">決済</th>
+                    <th className="px-3 py-2.5 text-center font-medium">結果</th>
+                    <th className="px-4 py-2.5 text-right font-medium">PnL</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filtered.map((t) => <UnifiedTradeRow key={t.id} t={t} />)}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
 
-      {/* Pattern comparison */}
+      {/* Pattern stats (crypto only) */}
       {subTab === 'stats' && (
         <div className="bg-panel rounded-xl border border-rim overflow-hidden">
           <div className="px-5 py-3.5 border-b border-rim bg-panel-raised">
-            <h3 className="text-sm font-semibold text-ink">パターン別成績</h3>
+            <h3 className="text-sm font-semibold text-ink">パターン別成績（暗号ミーム）</h3>
           </div>
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
@@ -409,7 +509,7 @@ function PaperTradesView() {
               <tbody className="divide-y divide-rim">
                 {ALL_PATTERNS.map((p) => {
                   const spec = PATTERN_SPECS[p]
-                  const s    = stats[p]
+                  const s    = cryptoStats[p]
                   const wr   = s && s.total > 0 ? s.wins / s.total * 100 : null
                   const avg  = s && s.total > 0 ? s.totalPnl / s.total : null
                   return (
@@ -436,108 +536,6 @@ function PaperTradesView() {
               </tbody>
             </table>
           </div>
-        </div>
-      )}
-
-      {/* Open positions */}
-      {subTab === 'open' && (
-        <div className="bg-panel rounded-xl border border-rim overflow-hidden">
-          {open.length === 0 ? (
-            <div className="px-6 py-10 text-center text-ink-faint text-sm">未決済ポジションなし</div>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="text-ink-faint text-left border-b border-rim">
-                    <th className="px-4 py-2.5 font-medium">銘柄</th>
-                    <th className="px-3 py-2.5 font-medium">PT</th>
-                    <th className="px-3 py-2.5 text-right font-medium">エントリー</th>
-                    <th className="px-3 py-2.5 text-right font-medium">現在価格</th>
-                    <th className="px-3 py-2.5 text-right font-medium">ライブPnL</th>
-                    <th className="px-4 py-2.5 text-right font-medium">証拠金維持率</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-rim">
-                  {open.map((t) => {
-                    const cur = prices[t.symbol] ?? null
-                    const liveGross = cur ? grossPnlPct(t.avgEntryPrice, cur, t.leverage) : null
-                    const liveCost  = roundTripCostPct(t.leverage)
-                    const livePnl   = liveGross !== null ? liveGross - liveCost + t.totalFRPct : null
-                    // Margin ratio: remaining equity / initial capital
-                    const marginRatio = cur
-                      ? Math.max(0, 100 + (liveGross ?? 0))
-                      : null
-                    return (
-                      <tr key={t.id} className="hover:bg-panel-raised transition-colors">
-                        <td className="px-4 py-2.5">
-                          <div className="font-mono text-sm text-ink">{t.symbol}</div>
-                          <div className="text-xs text-ink-faint mt-0.5">{new Date(t.lot1Time).toLocaleString('ja-JP', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })}</div>
-                        </td>
-                        <td className="px-3 py-2.5 font-mono font-bold text-amber-400 text-sm">{t.pattern}</td>
-                        <td className="px-3 py-2.5 text-right font-mono text-ink-dim text-sm">{fmtPrice(t.avgEntryPrice)}</td>
-                        <td className="px-3 py-2.5 text-right font-mono text-sm">
-                          {cur ? fmtPrice(cur) : <span className="text-ink-faint">—</span>}
-                          {t.status === 'pending_lot2' && <span className="ml-1 text-[10px] text-amber-400">lot2待ち</span>}
-                        </td>
-                        <td className={`px-3 py-2.5 text-right font-mono text-sm font-medium ${livePnl !== null ? (livePnl >= 0 ? 'text-green-400' : 'text-red-400') : 'text-ink-faint'}`}>
-                          {livePnl !== null ? `${livePnl >= 0 ? '+' : ''}${livePnl.toFixed(1)}%` : '—'}
-                        </td>
-                        <td className={`px-4 py-2.5 text-right font-mono text-sm ${marginRatio !== null ? (marginRatio < 20 ? 'text-red-400 font-bold' : marginRatio < 50 ? 'text-amber-400' : 'text-green-400') : 'text-ink-faint'}`}>
-                          {marginRatio !== null ? `${marginRatio.toFixed(0)}%` : '—'}
-                        </td>
-                      </tr>
-                    )
-                  })}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* Closed positions */}
-      {subTab === 'closed' && (
-        <div className="bg-panel rounded-xl border border-rim overflow-hidden">
-          {closed.length === 0 ? (
-            <div className="px-6 py-10 text-center text-ink-faint text-sm">決済済みなし</div>
-          ) : (
-            <div className="overflow-x-auto max-h-[500px] overflow-y-auto">
-              <table className="w-full text-sm">
-                <thead className="sticky top-0 bg-panel-raised z-10">
-                  <tr className="text-ink-faint text-left border-b border-rim">
-                    <th className="px-4 py-2.5 font-medium">銘柄</th>
-                    <th className="px-3 py-2.5 font-medium">PT</th>
-                    <th className="px-3 py-2.5 text-right font-medium">エントリー</th>
-                    <th className="px-3 py-2.5 text-right font-medium">決済</th>
-                    <th className="px-3 py-2.5 text-center font-medium">理由</th>
-                    <th className="px-3 py-2.5 text-right font-medium">純PnL</th>
-                    <th className="px-4 py-2.5 text-right font-medium">USDT</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-rim">
-                  {closed.map((t) => {
-                    const pnl = t.netPnlPct ?? 0
-                    const icon = t.exitReason === 'tp' ? '✅' : t.exitReason === 'liquidation' ? '💥' : '🛑'
-                    return (
-                      <tr key={t.id} className={`transition-colors ${pnl >= 0 ? 'bg-green-950/10 hover:bg-green-950/20' : 'bg-red-950/10 hover:bg-red-950/20'}`}>
-                        <td className="px-4 py-2 font-mono text-sm text-ink">{t.symbol}</td>
-                        <td className="px-3 py-2 font-mono font-bold text-amber-400 text-sm">{t.pattern}</td>
-                        <td className="px-3 py-2 text-right font-mono text-ink-dim text-xs">{fmtPrice(t.avgEntryPrice)}</td>
-                        <td className="px-3 py-2 text-right font-mono text-ink-dim text-xs">{t.exitPrice ? fmtPrice(t.exitPrice) : '—'}</td>
-                        <td className="px-3 py-2 text-center text-sm">{icon}</td>
-                        <td className={`px-3 py-2 text-right font-mono font-medium text-sm ${pnl >= 0 ? 'text-green-400' : 'text-red-400'}`}>
-                          {pnl >= 0 ? '+' : ''}{pnl.toFixed(1)}%
-                        </td>
-                        <td className={`px-4 py-2 text-right font-mono text-xs ${(t.netPnlUsdt ?? 0) >= 0 ? 'text-green-400' : 'text-red-400'}`}>
-                          {t.netPnlUsdt !== null ? `${t.netPnlUsdt >= 0 ? '+' : ''}${t.netPnlUsdt.toFixed(0)}` : '—'}
-                        </td>
-                      </tr>
-                    )
-                  })}
-                </tbody>
-              </table>
-            </div>
-          )}
         </div>
       )}
     </div>
