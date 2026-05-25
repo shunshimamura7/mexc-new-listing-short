@@ -124,9 +124,10 @@ export async function GET(req: NextRequest) {
         }
       }
 
-      const autoEntryResults = await Promise.allSettled(
-        Array.from(seenTickers.values()).map(async (l) => {
-          // Layer 1: dedup guard
+      // Phase A (parallel): compute signals + prices — read-only, no daily-cap side-effects
+      type Candidate = { signal: Parameters<typeof runStockPaperEntry>[0]; entryPrice: number }
+      const phaseAResults = await Promise.allSettled(
+        Array.from(seenTickers.values()).map(async (l): Promise<Candidate | null> => {
           if (await wasStockTraded(l.symbol)) { skipped++; return null }
 
           const coinLike = {
@@ -135,11 +136,9 @@ export async function GET(req: NextRequest) {
             correlation: null, listingPremium: null,
           } as Parameters<typeof calcStockSignal>[0]
 
-          // Layer 2: signal threshold guard
           const signal = await calcStockSignal(coinLike)
           if (!signal || !signal.direction) { skipped++; return null }
 
-          // Layer 3: get current price, require valid price
           const priceData = await getExtendedHoursPrice(signal.ticker)
           const entryPrice =
             priceData?.preMarketPrice  ??
@@ -147,19 +146,38 @@ export async function GET(req: NextRequest) {
             priceData?.regularPrice    ?? 0
           if (entryPrice <= 0) { skipped++; return null }
 
-          // Fire entry (runStockPaperEntry has its own dedup + daily cap guards)
-          const trade = await runStockPaperEntry(signal, entryPrice)
-          if (trade) entered++
-          return trade
+          return { signal, entryPrice }
         })
       )
 
-      // Log any unexpected errors
-      for (const r of autoEntryResults) {
+      for (const r of phaseAResults) {
         if (r.status === 'rejected') {
-          console.error('[stock-signal/check] auto-entry error:', r.reason)
+          console.error('[stock-signal/check] phase-A error:', r.reason)
         }
       }
+
+      // Sort by confidence descending so highest-conviction signals enter first
+      const candidates = phaseAResults
+        .filter((r): r is PromiseFulfilledResult<Candidate> =>
+          r.status === 'fulfilled' && r.value !== null
+        )
+        .map((r) => r.value)
+        .sort((a, b) => b.signal.confidence - a.signal.confidence)
+
+      console.log(`[stock-signal/check] candidates: ${candidates.length}`)
+
+      // Phase B (sequential): re-check cap before each entry — fixes TOCTOU race
+      for (const { signal, entryPrice } of candidates) {
+        if (!(await canStockEnterToday())) {
+          console.log('[stock-signal/check] daily cap reached, stopping')
+          break
+        }
+        const trade = await runStockPaperEntry(signal, entryPrice)
+        if (trade) entered++
+        else skipped++
+      }
+
+      console.log(`[stock-signal/check] done: entered=${entered} skipped=${skipped}`)
     }
 
     return NextResponse.json({
