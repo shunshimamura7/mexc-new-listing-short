@@ -286,6 +286,50 @@ function computePatternStats(trades: PaperTrade[]): Partial<Record<PatternName, 
   return stats
 }
 
+function downloadPaperCSV(trades: UnifiedTrade[]) {
+  const toJST = (iso: string) =>
+    new Date(new Date(iso).getTime() + 9 * 3_600_000).toISOString().slice(0, 16).replace('T', ' ')
+
+  const q = (v: string) => `"${v.replace(/"/g, '""')}"`
+
+  const headers = [
+    'id', 'symbol', 'category', 'direction', 'pattern',
+    'entryPrice', 'slPrice', 'tpPrice', 'exitPrice', 'exitReason',
+    'status', 'pnlPct', 'entryTime', 'exitTime', 'confidence', 'pumpPct',
+  ]
+
+  const rows = trades.map((t) => [
+    q(t.id),
+    q(t.symbol),
+    q(t.category === 'crypto_meme' ? '暗号ミーム' : 'STOCK'),
+    q(t.side === 'long' ? 'ロング' : 'ショート'),
+    q(t.pattern ?? ''),
+    t.entryPrice,
+    t.slPrice,
+    t.tpPrice,
+    t.exitPrice ?? '',
+    q(t.exitReason ?? ''),
+    q(t.status === 'open' ? '保有中' : '決済済み'),
+    t.pnlPct != null ? t.pnlPct.toFixed(2) : '',
+    q(toJST(t.entryTime)),
+    q(t.exitTime ? toJST(t.exitTime) : ''),
+    t.confidence ?? '',
+    t.pumpPct != null ? t.pumpPct.toFixed(1) : '',
+  ].join(','))
+
+  const BOM = '\uFEFF'
+  const csv = BOM + [headers.join(','), ...rows].join('\r\n')
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = `paper-trades-${new Date().toISOString().slice(0, 10)}.csv`
+  document.body.appendChild(a)
+  a.click()
+  document.body.removeChild(a)
+  URL.revokeObjectURL(url)
+}
+
 function SummaryBar({ label, s, color }: { label: string; s: UnifiedSummary; color: string }) {
   return (
     <div className="bg-panel border border-rim rounded-xl p-4 flex flex-col gap-1">
@@ -454,6 +498,18 @@ function PaperTradesView() {
             </button>
           ))}
         </div>
+        <button
+          onClick={() => downloadPaperCSV(trades)}
+          className="ml-auto flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-medium bg-panel border border-rim text-ink-dim hover:text-amber-400 hover:border-amber-500/40 transition-colors"
+          title={`全${trades.length}件をCSVダウンロード`}
+        >
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+            <polyline points="7 10 12 15 17 10"/>
+            <line x1="12" y1="15" x2="12" y2="3"/>
+          </svg>
+          CSV
+        </button>
       </div>
 
       {/* Trade list */}
