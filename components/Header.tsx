@@ -9,7 +9,7 @@ const NAV_LINKS = [
   { href: '/collect',       label: 'データ収集' },
   { href: '/backtest',      label: 'バックテスト' },
   { href: '/trades',        label: 'マイトレード' },
-  { href: '/long-research', label: 'ロング検証 🧪' },
+  // { href: '/long-research', label: 'ロング検証 🧪' },
   { href: '/settings',      label: '設定' },
 ]
 
