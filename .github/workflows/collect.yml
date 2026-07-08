@@ -6,7 +6,7 @@ on:
   workflow_dispatch:          # GitHub UI から手動実行も可能
 
 env:
-  API_BASE: https://mexc-new-listing-short.vercel.app
+  API_BASE: https://mexc-new-listing-short-iota.vercel.app
 
 jobs:
   collect-and-backtest:
@@ -24,6 +24,7 @@ jobs:
           RESPONSE=$(curl -s --retry 3 --retry-delay 5 \
             -X POST \
             -H "Content-Type: application/json" \
+            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
             -d '{"days": 7}' \
             "$API_BASE/api/collect")
 
@@ -58,6 +59,7 @@ jobs:
             RESULT=$(curl -s --retry 2 --retry-delay 3 --max-time 65 \
               -X POST \
               -H "Content-Type: application/json" \
+              -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
               -d "{\"symbol\":\"$SYMBOL\",\"createTime\":$CREATE_TIME}" \
               "$API_BASE/api/collect")
 
@@ -84,6 +86,7 @@ jobs:
           RESPONSE=$(curl -s --max-time 120 \
             -X POST \
             -H "Content-Type: application/json" \
+            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
             -d '{
               "entryHours":  [12, 24, 48],
               "slRange":     [20, 30, 40, 50],
