@@ -49,3 +49,4 @@ next-env.d.ts
 /research/data/kline/
 /research/data/*.log
 /research/data/kline-binance/
+/research/data/funding/
