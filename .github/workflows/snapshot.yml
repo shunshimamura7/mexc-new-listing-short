@@ -1,0 +1,63 @@
+name: snapshot-contract-detail
+
+# Records the full contract list once a day. contract/detail only returns
+# CURRENTLY-LISTED contracts, so delisted ones vanish without a trace. These
+# snapshots are the only way to reconstruct them later and measure survivorship.
+on:
+  schedule:
+    - cron: '0 0 * * *' # 00:00 UTC daily
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: snapshot-contract-detail
+  cancel-in-progress: false
+
+jobs:
+  snapshot:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Fetch contract/detail (1 retry, no secrets — public API)
+        run: |
+          set -euo pipefail
+          mkdir -p research/snapshots
+          DATE=$(date -u +%Y-%m-%d)
+          OUT="research/snapshots/detail-${DATE}.json.gz"
+
+          fetch() {
+            curl -fsS --max-time 60 \
+              'https://contract.mexc.com/api/v1/contract/detail' -o /tmp/detail.json
+          }
+          fetch || { echo "first attempt failed, retrying once..."; sleep 15; fetch; }
+
+          # Guard against committing an error page or a truncated body.
+          node -e '
+            const j = JSON.parse(require("fs").readFileSync("/tmp/detail.json", "utf8"));
+            if (j.success !== true || !Array.isArray(j.data) || j.data.length === 0) {
+              throw new Error("unexpected payload: success=" + j.success + " data=" + (j.data && j.data.length));
+            }
+            console.log("contracts:", j.data.length);
+          '
+
+          gzip -9 -c /tmp/detail.json > "$OUT"
+          echo "wrote $OUT ($(du -h "$OUT" | cut -f1))"
+          echo "OUT=$OUT" >> "$GITHUB_ENV"
+          echo "DATE=$DATE" >> "$GITHUB_ENV"
+
+      - name: Commit snapshot
+        run: |
+          set -euo pipefail
+          git config user.name  'github-actions[bot]'
+          git config user.email 'github-actions[bot]@users.noreply.github.com'
+          git add "$OUT"
+          # Same-day re-run produces an identical file -> nothing to commit.
+          if git diff --cached --quiet; then
+            echo "no change, skipping commit"
+            exit 0
+          fi
+          git commit -m "chore(snapshot): contract/detail ${DATE}"
+          git push
