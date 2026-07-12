@@ -1,0 +1,16 @@
+[
+  {
+    "symbol": "BTCSTUSDT",
+    "contractType": "PERPETUAL",
+    "status": "PENDING_TRADING",
+    "onboardDate": "2021-03-03T07:00:00.000Z",
+    "reason": "api error: {\"code\":-1122,\"msg\":\"Invalid symbol status.\"} (after 3 retries)"
+  },
+  {
+    "symbol": "GAIBUSDT",
+    "contractType": "PERPETUAL",
+    "status": "PENDING_TRADING",
+    "onboardDate": "2025-11-20T09:00:00.000Z",
+    "reason": "api error: {\"code\":-1122,\"msg\":\"Invalid symbol status.\"} (after 3 retries)"
+  }
+]
